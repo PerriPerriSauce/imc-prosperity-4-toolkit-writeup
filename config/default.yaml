@@ -1,0 +1,22 @@
+# Global Default Configuration for IMC Prosperity 4 Research Toolkit
+
+project:
+  name: "imc-prosperity-4-toolkit-writeup"
+  version: "0.1.0"
+  competition: "IMC Prosperity 4 (April 2026)"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+data:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  expected_timestamp_step: 100
+
+execution:
+  default_position_limit: 20
+  round5_position_limit: 10
+  latency_ticks: 0
+  conservative_fills: true
