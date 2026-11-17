@@ -1,6 +1,11 @@
 """Statistical analysis, microstructure diagnostics, risk assessment, and overfitting checks."""
 
-from prosperity_toolkit.analysis.diagnostics import OverfittingDiagnostics
+from prosperity_toolkit.analysis.diagnostics import (
+    BootstrapCIResult,
+    CSCVResult,
+    DSRResult,
+    OverfittingDiagnostics,
+)
 from prosperity_toolkit.analysis.microstructure import (
     ADFTestResult,
     DescriptiveBookReport,
@@ -21,6 +26,9 @@ from prosperity_toolkit.analysis.statistics import SummaryStatistics
 
 __all__ = [
     "ADFTestResult",
+    "BootstrapCIResult",
+    "CSCVResult",
+    "DSRResult",
     "DescriptiveBookReport",
     "OBIPredictiveResult",
     "OUCalibrationResult",

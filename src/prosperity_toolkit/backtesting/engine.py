@@ -40,6 +40,7 @@ class BacktestEngine:
         self.portfolio = PortfolioTracker(initial_cash=self.initial_cash)
         all_fills: list[FillEvent] = []
         equity_curve: list[float] = []
+        last_marks: dict[str, float] = {}
 
         for snap in snapshots:
             strategy.update_positions(self.portfolio.positions)
@@ -50,11 +51,17 @@ class BacktestEngine:
                 self.portfolio.apply_fill(fill)
                 all_fills.append(fill)
 
-            marks = {
-                sym: book.mid_price or 0.0
-                for sym, book in snap.books.items()
-            }
-            equity_curve.append(self.portfolio.total_valuation(marks))
+            for sym, book in snap.books.items():
+                if book.mid_price is not None:
+                    last_marks[sym] = book.mid_price
+                elif sym not in last_marks:
+                    if book.best_bid is not None:
+                        last_marks[sym] = float(book.best_bid)
+                    elif book.best_ask is not None:
+                        last_marks[sym] = float(book.best_ask)
+                    else:
+                        last_marks[sym] = 0.0
+            equity_curve.append(self.portfolio.total_valuation(last_marks))
 
         final_pnl = equity_curve[-1] if equity_curve else 0.0
         max_dd, max_dd_duration = PerformanceMetrics.calculate_max_drawdown(equity_curve)

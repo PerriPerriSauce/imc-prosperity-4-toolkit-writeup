@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 from prosperity_toolkit.core.models import OrderRequest, Symbol
 from prosperity_toolkit.market.market_state import MarketStateSnapshot
@@ -91,7 +91,12 @@ class InventorySkewedMarketMaker(BaseStrategy):
         self.configs = {cfg.symbol: cfg for cfg in configs}
         self._ema_fv: dict[Symbol, float] = {}
 
-    def _update_fair_value(self, sym: Symbol, cfg: MarketMakingConfig, state: MarketStateSnapshot) -> float | None:
+    def _update_fair_value(
+        self,
+        sym: Symbol,
+        cfg: MarketMakingConfig,
+        state: MarketStateSnapshot,
+    ) -> float | None:
         book = state.get_book(sym)
         if book is not None and book.best_bid is not None and book.best_ask is not None:
             obs = book.weighted_mid_price or ((book.best_bid + book.best_ask) / 2.0)
@@ -106,8 +111,8 @@ class InventorySkewedMarketMaker(BaseStrategy):
             return None
 
         if cfg.anchor_fv is not None and cfg.anchor_weight > 0.0:
-            return cfg.anchor_weight * cfg.anchor_fv + (1.0 - cfg.anchor_weight) * ema
-        return ema
+            return float(cfg.anchor_weight * cfg.anchor_fv + (1.0 - cfg.anchor_weight) * ema)
+        return float(ema)
 
     def generate_orders(self, state: MarketStateSnapshot) -> list[OrderRequest]:
         """Take mispriced liquidity and post inventory-skewed passive quotes."""

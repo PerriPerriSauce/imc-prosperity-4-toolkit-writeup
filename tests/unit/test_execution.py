@@ -91,3 +91,38 @@ def test_maker_matching_conservative_vs_touch() -> None:
     assert fills[0].price == 100
     assert fills[0].quantity == 5
     assert fills[0].fill_type == FillType.MAKER
+
+
+def test_maker_matching_queue_aware(sample_order_book: OrderBookL2) -> None:
+    """Queue-aware maker fills must respect resting book volume ahead at the touch."""
+    # sample_order_book has bids={99: 10, 98: 20} -> queue ahead at 99 is 10
+    qa_sim = ExecutionSimulator(fill_mode="queue_aware")
+
+    # Joining best_bid=99 with trade size 6 <= queue_ahead (10) -> 0 fills
+    resting_join = [OrderRequest(symbol="TEST_ASSET", price=99, quantity=5)]
+    small_trade = [
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=99, quantity=6, buyer="", seller=""),
+    ]
+    assert qa_sim.match_maker_orders(100, resting_join, small_trade, book=sample_order_book) == []
+
+    # Trade size 13 > queue_ahead (10) -> remaining fillable volume is 3
+    large_trade = [
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=99, quantity=13, buyer="", seller=""),
+    ]
+    fills = qa_sim.match_maker_orders(100, resting_join, large_trade, book=sample_order_book)
+    assert len(fills) == 1
+    assert fills[0].quantity == 3
+
+    # Penny-improving at 100 has queue_ahead = 0 -> fills full 5 on trade of 5 at 100
+    resting_improve = [OrderRequest(symbol="TEST_ASSET", price=100, quantity=5)]
+    improve_trade = [
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=100, quantity=5, buyer="", seller=""),
+    ]
+    improve_fills = qa_sim.match_maker_orders(
+        100,
+        resting_improve,
+        improve_trade,
+        book=sample_order_book,
+    )
+    assert len(improve_fills) == 1
+    assert improve_fills[0].quantity == 5
