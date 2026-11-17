@@ -14,6 +14,7 @@ dependencies = [
     "scipy>=1.13",
     "matplotlib>=3.9,<4.0",
     "pyyaml>=6.0",
+    "jsonpickle>=3.0",
 ]
 
 [dependency-groups]

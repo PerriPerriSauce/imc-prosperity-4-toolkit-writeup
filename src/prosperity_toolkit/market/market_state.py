@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from prosperity_toolkit.core.models import Position, Symbol, Timestamp
 from prosperity_toolkit.market.order_book import OrderBookL2
+from prosperity_toolkit.market.order_flow import TradePrint
 
 
 @dataclass
@@ -15,6 +16,7 @@ class MarketStateSnapshot:
     timestamp: Timestamp
     books: dict[Symbol, OrderBookL2] = field(default_factory=dict)
     positions: dict[Symbol, Position] = field(default_factory=dict)
+    market_trades: dict[Symbol, list[TradePrint]] = field(default_factory=dict)
     trader_data: str = ""
 
     def get_position(self, symbol: Symbol) -> Position:

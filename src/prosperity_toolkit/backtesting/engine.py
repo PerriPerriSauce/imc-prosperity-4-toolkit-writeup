@@ -17,10 +17,19 @@ from prosperity_toolkit.strategies.base import BaseStrategy
 class BacktestEngine:
     """Orchestrates end-to-end backtesting replay sessions."""
 
-    def __init__(self, simulator: ExecutionSimulator | None = None) -> None:
+    def __init__(
+        self,
+        simulator: ExecutionSimulator | None = None,
+        reject_on_limit_breach: bool = True,
+        initial_cash: float = 0.0,
+    ) -> None:
         self.simulator = simulator or ExecutionSimulator()
-        self.replay_loop = HistoricalReplayLoop(self.simulator)
-        self.portfolio = PortfolioTracker()
+        self.replay_loop = HistoricalReplayLoop(
+            self.simulator,
+            reject_on_limit_breach=reject_on_limit_breach,
+        )
+        self.initial_cash = initial_cash
+        self.portfolio = PortfolioTracker(initial_cash=initial_cash)
 
     def run(
         self,
@@ -28,6 +37,7 @@ class BacktestEngine:
         snapshots: Sequence[MarketStateSnapshot],
     ) -> BacktestResult:
         """Run strategy against provided sequence of market snapshots."""
+        self.portfolio = PortfolioTracker(initial_cash=self.initial_cash)
         all_fills: list[FillEvent] = []
         equity_curve: list[float] = []
 
@@ -49,7 +59,6 @@ class BacktestEngine:
         final_pnl = equity_curve[-1] if equity_curve else 0.0
         max_dd, max_dd_duration = PerformanceMetrics.calculate_max_drawdown(equity_curve)
 
-        # Compute simple periodic returns
         returns = [
             equity_curve[i] - equity_curve[i - 1]
             for i in range(1, len(equity_curve))

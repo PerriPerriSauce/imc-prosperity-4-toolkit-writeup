@@ -1,13 +1,16 @@
 """Official IMC Prosperity 4 Data Model.
 
-This module provides exact structural parity with the official datamodel.py provided in
-the IMC Prosperity 4 competition runtime.
+This module provides exact structural parity with traders/datamodel.py and the
+official IMC Prosperity 4 competition runtime.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from json import JSONEncoder
+from typing import Any
+
+import jsonpickle
 
 Time = int
 Symbol = str
@@ -20,10 +23,53 @@ ObservationValue = int
 class Listing:
     """Represents an exchange product listing."""
 
-    def __init__(self, symbol: Symbol, product: Product, denomination: Product) -> None:
+    def __init__(self, symbol: Symbol, product: Product, denomination: int) -> None:
         self.symbol = symbol
         self.product = product
         self.denomination = denomination
+
+
+class ConversionObservation:
+    """Observations related to conversion and foreign market metrics."""
+
+    def __init__(
+        self,
+        bidPrice: float,
+        askPrice: float,
+        transportFees: float,
+        exportTariff: float,
+        importTariff: float,
+        sugarPrice: float,
+        sunlightIndex: float,
+    ) -> None:
+        self.bidPrice = bidPrice
+        self.askPrice = askPrice
+        self.transportFees = transportFees
+        self.exportTariff = exportTariff
+        self.importTariff = importTariff
+        self.sugarPrice = sugarPrice
+        self.sunlightIndex = sunlightIndex
+
+
+class Observation:
+    """Container for environmental and plain value observations."""
+
+    def __init__(
+        self,
+        plainValueObservations: dict[Product, ObservationValue] | None = None,
+        conversionObservations: dict[Product, ConversionObservation] | None = None,
+    ) -> None:
+        self.plainValueObservations: dict[Product, ObservationValue] = (
+            plainValueObservations if plainValueObservations is not None else {}
+        )
+        self.conversionObservations: dict[Product, ConversionObservation] = (
+            conversionObservations if conversionObservations is not None else {}
+        )
+
+    def __str__(self) -> str:
+        plain_str = jsonpickle.encode(self.plainValueObservations)
+        conv_str = jsonpickle.encode(self.conversionObservations)
+        return f"(plainValueObservations: {plain_str}, conversionObservations: {conv_str})"
 
 
 class Order:
@@ -38,7 +84,7 @@ class Order:
         return f"({self.symbol}, {self.price}, {self.quantity})"
 
     def __repr__(self) -> str:
-        return f"Order({self.symbol!r}, {self.price!r}, {self.quantity!r})"
+        return f"({self.symbol}, {self.price}, {self.quantity})"
 
 
 class OrderDepth:
@@ -62,56 +108,22 @@ class Trade:
         timestamp: int = 0,
     ) -> None:
         self.symbol = symbol
-        self.price = price
-        self.quantity = quantity
+        self.price: int = price
+        self.quantity: int = quantity
         self.buyer = buyer
         self.seller = seller
         self.timestamp = timestamp
 
     def __str__(self) -> str:
-        parts = [self.symbol, str(self.price), str(self.quantity)]
-        parts.extend([str(self.buyer), str(self.seller), str(self.timestamp)])
-        return f"({', '.join(parts)})"
-
-    def __repr__(self) -> str:
+        buyer_str = self.buyer if self.buyer is not None else ""
+        seller_str = self.seller if self.seller is not None else ""
         return (
-            f"Trade({self.symbol!r}, {self.price!r}, {self.quantity!r}, "
-            f"{self.buyer!r}, {self.seller!r}, {self.timestamp!r})"
+            f"({self.symbol}, {buyer_str} << {seller_str}, "
+            f"{self.price}, {self.quantity}, {self.timestamp})"
         )
 
-
-class ConversionObservation:
-    """Observations related to conversion and foreign market metrics."""
-
-    def __init__(
-        self,
-        bidPrice: float = 0.0,
-        askPrice: float = 0.0,
-        transportFees: float = 0.0,
-        exportTariff: float = 0.0,
-        importTariff: float = 0.0,
-        sunlight: float = 0.0,
-        humidity: float = 0.0,
-    ) -> None:
-        self.bidPrice = bidPrice
-        self.askPrice = askPrice
-        self.transportFees = transportFees
-        self.exportTariff = exportTariff
-        self.importTariff = importTariff
-        self.sunlight = sunlight
-        self.humidity = humidity
-
-
-class Observation:
-    """Container for environmental and plain value observations."""
-
-    def __init__(
-        self,
-        plainValueObservations: dict[Product, ObservationValue] | None = None,
-        conversionObservations: dict[Product, ConversionObservation] | None = None,
-    ) -> None:
-        self.plainValueObservations = plainValueObservations or {}
-        self.conversionObservations = conversionObservations or {}
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 class TradingState:
@@ -121,26 +133,29 @@ class TradingState:
         self,
         traderData: str,
         timestamp: Time,
-        listings: Mapping[Symbol, Listing],
-        order_depths: Mapping[Symbol, OrderDepth],
-        own_trades: Mapping[Symbol, list[Trade]],
-        market_trades: Mapping[Symbol, list[Trade]],
-        position: Mapping[Product, Position],
+        listings: dict[Symbol, Listing],
+        order_depths: dict[Symbol, OrderDepth],
+        own_trades: dict[Symbol, list[Trade]],
+        market_trades: dict[Symbol, list[Trade]],
+        position: dict[Product, Position],
         observations: Observation,
     ) -> None:
         self.traderData = traderData
         self.timestamp = timestamp
-        self.listings = dict(listings)
-        self.order_depths = dict(order_depths)
-        self.own_trades = dict(own_trades)
-        self.market_trades = dict(market_trades)
-        self.position = dict(position)
+        self.listings = listings
+        self.order_depths = order_depths
+        self.own_trades = own_trades
+        self.market_trades = market_trades
+        self.position = position
         self.observations = observations
 
-    def to_json(self) -> str:
-        """Serialize state summary."""
-        return json.dumps({
-            "timestamp": self.timestamp,
-            "position": self.position,
-            "traderData": self.traderData,
-        })
+    def toJSON(self) -> str:
+        """Serialize state to JSON."""
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True)
+
+
+class ProsperityEncoder(JSONEncoder):
+    """JSON encoder for Prosperity datamodel objects."""
+
+    def default(self, o: Any) -> Any:
+        return o.__dict__

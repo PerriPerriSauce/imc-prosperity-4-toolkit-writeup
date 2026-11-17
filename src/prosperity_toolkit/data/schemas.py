@@ -25,10 +25,24 @@ PRICE_CSV_COLUMNS: Final[list[str]] = [
     "profit_and_loss",
 ]
 
+PRICE_REQUIRED_COLUMNS: Final[list[str]] = [
+    "timestamp",
+    "product",
+    "mid_price",
+]
+
 TRADE_CSV_COLUMNS: Final[list[str]] = [
     "timestamp",
     "buyer",
     "seller",
+    "symbol",
+    "currency",
+    "price",
+    "quantity",
+]
+
+TRADE_REQUIRED_COLUMNS: Final[list[str]] = [
+    "timestamp",
     "symbol",
     "price",
     "quantity",
@@ -66,5 +80,6 @@ class TradeRecordSchema:
     buyer: str
     seller: str
     symbol: str
-    price: int
+    price: float
     quantity: int
+    currency: str = "XIRECS"
