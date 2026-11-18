@@ -1,0 +1,6 @@
+round,scenario,mean_pnl,std_pnl,median_pnl,var_95,cvar_95,prob_loss,mean_sharpe_252,worst_max_dd
+2,Round2Submission_BaselineFlow,5065.52,788.72,5092.0,3578.2,3463.25,0.0,2.8362,679.0
+2,Round2Submission_MAFPlus25,6755.98,724.54,6686.5,5578.0,5487.25,0.0,3.6416,721.0
+3,Round3Submission,2448.56,738.98,2563.0,1137.0,1121.25,0.0,0.5189,1641.0
+4,Round4Submission,2345.1,763.63,2260.5,1692.4,1116.75,0.0,0.4966,1905.5
+5,Round5Submission_JointMC,14876.42,5703.86,14140.5,6495.55,2649.0,0.0,1.6066,5497.5

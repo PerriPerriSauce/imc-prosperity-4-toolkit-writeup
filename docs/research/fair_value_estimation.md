@@ -1,6 +1,6 @@
 # Fair Value Estimation Across Regimes (Rounds 1–5)
 
-Accurate fair value $V_t$ separates genuine fundamental drift from bid-ask bounce and informed toxic flow. Across Rounds 1–5 of IMC Prosperity 4, five distinct stochastic regimes required fundamentally different estimators—and reusing the wrong estimator across regimes proved to be the single largest source of strategy drawdowns ([`postmortem.md`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/postmortem.md)).
+Accurate fair value $V_t$ separates genuine fundamental drift from bid-ask bounce and informed toxic flow. Across Rounds 1–5 of IMC Prosperity 4, five distinct stochastic regimes required fundamentally different estimators—and reusing the wrong estimator across regimes proved to be the single largest source of strategy drawdowns ([`postmortem.md`](../postmortem.md)).
 
 ## 1. Taxonomy of Empirical Fair-Value Estimators
 
@@ -25,7 +25,7 @@ treats every single-lot penny improvement as a shift in intrinsic value. In Roun
 Applying exponential smoothing $\hat{V}_t = \alpha m_{\text{wall}, t} + (1 - \alpha)\hat{V}_{t-1}$ improves RMSE only when observation noise $\sigma_\epsilon^2$ dominates innovation variance $\sigma_\eta^2$ (steady-state Kalman gain $K < 1$ requires small signal-to-noise ratio $\sigma_\eta^2 / \sigma_\epsilon^2$).
 
 - When $P_t$ evolves as a slow stationary OU (`Osmium`, $\sigma_{\Delta P} \approx 1.9$) behind wide spreads (`16` ticks), steady-state Kalman gain stays below `1` without risking adverse fills.
-- In **Round 5**, however, asset step innovations jumped to $\sigma_{\Delta P} \approx 10–30$ ticks per timestamp with zero stationary drift mean. Any smoothing $\alpha < 1$ lags behind true fair value by multiple spread widths after random jumps, turning resting passive quotes into negatively skewed free options against informed/synchronized Poisson pulse takers (`EmaSymmetricMM_All50` suffered `29,130.00` OOS drawdown with `Sharpe_252 = 0.3260` vs **`6,205.50`** MaxDD and **`0.8109`** Sharpe for lag-free [`Round5Submission`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round5/submission.py)).
+- In **Round 5**, however, asset step innovations jumped to $\sigma_{\Delta P} \approx 10–30$ ticks per timestamp with zero stationary drift mean. Any smoothing $\alpha < 1$ lags behind true fair value by multiple spread widths after random jumps, turning resting passive quotes into negatively skewed free options against informed/synchronized Poisson pulse takers (`EmaSymmetricMM_All50` suffered `29,130.00` OOS drawdown with `Sharpe_252 = 0.3260` vs **`6,205.50`** MaxDD and **`0.8109`** Sharpe for lag-free [`Round5Submission`](../../traders/round5/submission.py)).
 
 ## 4. Non-Stationary Cross-Asset Fair Value (`K_day`) vs Instantaneous Parity
 

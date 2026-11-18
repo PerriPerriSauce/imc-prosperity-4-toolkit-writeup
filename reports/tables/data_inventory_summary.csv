@@ -1,0 +1,35 @@
+filepath,dataset_type,round_num,day_num,file_size_bytes,row_count,duplicate_count,one_sided_ticks,empty_book_ticks,zero_price_trades,unique_buyer_ids,unique_seller_ids,continuity_ok,is_valid,sha256,warnings
+data/raw/prosperity4/round0/prices_round_0_day_-1.csv,prices,0,-1,1336914,20000,0,0,0,0,0,0,True,True,edf11761f38412c9b29c6338434a90f9a5e2fba7f5426dccb657da04383f1706,
+data/raw/prosperity4/round0/prices_round_0_day_-2.csv,prices,0,-2,1336841,20000,0,0,0,0,0,0,True,True,dfe36e0dde81a62ba94391a0c97796fad99b62be27ba174092f65865e261409a,
+data/raw/prosperity4/round0/trades_round_0_day_-1.csv,trades,0,-1,21550,631,0,0,0,0,0,0,True,True,7d106a6133851c10a97f73a79715dfb460c3c00d4e245147e00147bef1248827,
+data/raw/prosperity4/round0/trades_round_0_day_-2.csv,trades,0,-2,20085,588,0,0,0,0,0,0,True,True,9f108698bb74ccdcd738e3de988846b58ee5ca58148271734bd8b612ff42ade8,
+data/raw/prosperity4/round1/prices_round_1_day_-1.csv,prices,1,-1,1497489,20000,0,1522,34,0,0,0,True,True,33017877198d24d73c4879aabd68d370cc6a53d892ce14903fd639ffd982d2df,Found 34 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round1/prices_round_1_day_-2.csv,prices,1,-2,1493726,20000,0,1563,34,0,0,0,True,True,85da1f389ef8a8f16c309d43d8c51b94c35065266f0eff7385cc876ef7762836,Found 34 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round1/prices_round_1_day_0.csv,prices,1,0,1478354,20000,0,1480,35,0,0,0,True,True,5c5faa905fa9430434860f0a241f2eeaa5d39c3856ce5615e8b236f774a733b4,Found 35 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round1/trades_round_1_day_-1.csv,trades,1,-1,34231,760,0,0,0,0,0,0,True,True,6cf74efc5640fcc3836aa07a24c27f1a12a85ad5fe300f06319044a320cc85f4,
+data/raw/prosperity4/round1/trades_round_1_day_-2.csv,trades,1,-2,34800,773,2,0,0,0,0,0,True,True,82f07f00d315781ef4bff917c6392e2971332938c790faad217ad1b48d4f7efc,Found 2 exact duplicate trade records
+data/raw/prosperity4/round1/trades_round_1_day_0.csv,trades,1,0,33498,743,0,0,0,0,0,0,True,True,61512945598ea079bd78033aab39682b6cf6f52326473163aea2f819b12e47ab,
+data/raw/prosperity4/round2/prices_round_2_day_-1.csv,prices,2,-1,1496732,20000,0,1489,28,0,0,0,True,True,67d52edfa3727543777550cae0cedebf0119fb7d42cd81e7b6e83078c91b2081,Found 28 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round2/prices_round_2_day_0.csv,prices,2,0,1477660,20000,0,1479,34,0,0,0,True,True,88c9d8fcbfcccdf125762686dc7667d43c3d6463f6b436e4daf13b53d1d6bcd9,Found 34 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round2/prices_round_2_day_1.csv,prices,2,1,1476934,20000,0,1500,38,0,0,0,True,True,e7a36e1344cabee6a68a0d4cbc9d770abc51460a2d85554042121dfff2f84227,Found 38 empty-book rows with mid_price == 0.0
+data/raw/prosperity4/round2/trades_round_2_day_-1.csv,trades,2,-1,35520,790,0,0,0,0,0,0,True,True,6903eda25573f7509ee01db6af0dc18de394390dd13adcefee8a83d12d7ea7bd,
+data/raw/prosperity4/round2/trades_round_2_day_0.csv,trades,2,0,36083,803,0,0,0,0,0,0,True,True,a53b35ea4992ee817efa739d7966a95f60b8b831330591cb54ebec6e65299a60,
+data/raw/prosperity4/round2/trades_round_2_day_1.csv,trades,2,1,35868,798,0,0,0,0,0,0,True,True,8ce720389afda43160b6967e734c799ca47404dc3341361701f0ffef15de409b,
+data/raw/prosperity4/round3/prices_round_3_day_0.csv,prices,3,0,6520757,120000,0,0,0,0,0,0,True,True,fd647c453f2caa268b07b69f112b371fe93aca71dcbb740d32cc058969f54bb2,
+data/raw/prosperity4/round3/prices_round_3_day_1.csv,prices,3,1,6517921,120000,0,0,0,0,0,0,True,True,90e673b99e3eb9b5a0bb92456bf221471ef2dee2d253e25a648e8772de6b3bc1,
+data/raw/prosperity4/round3/prices_round_3_day_2.csv,prices,3,2,6516304,120000,0,0,0,0,0,0,True,True,5ff44e653772eb0b63085999be42ec8f6b07bfa722536621f086a90b6eaacff6,
+data/raw/prosperity4/round3/trades_round_3_day_0.csv,trades,3,0,50063,1308,0,0,0,182,0,0,True,True,c8ba14ccfeb149e6a628cf8d3b9cb39aac262df68c6ee45e524a1c4b3a42a4a8,Found 182 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round3/trades_round_3_day_1.csv,trades,3,1,53613,1407,0,0,0,196,0,0,True,True,16c0650eed9c577d0d78b3f5c0a03efa86270aad420e58494337a1745ff7745a,Found 196 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round3/trades_round_3_day_2.csv,trades,3,2,51070,1333,0,0,0,190,0,0,True,True,1feef273e1eb7d0f751df4f6e00a21046a4d5cae8432fc62760fa20a76967d03,Found 190 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round4/prices_round_4_day_1.csv,prices,4,1,6517921,120000,0,0,0,0,0,0,True,True,90e673b99e3eb9b5a0bb92456bf221471ef2dee2d253e25a648e8772de6b3bc1,
+data/raw/prosperity4/round4/prices_round_4_day_2.csv,prices,4,2,6516304,120000,0,0,0,0,0,0,True,True,5ff44e653772eb0b63085999be42ec8f6b07bfa722536621f086a90b6eaacff6,
+data/raw/prosperity4/round4/prices_round_4_day_3.csv,prices,4,3,6479586,120000,0,0,0,0,0,0,True,True,f42a2a716d8f0e1fbcd01425b80e16a949e56d81a4b376adb764d006b6a556c4,
+data/raw/prosperity4/round4/trades_round_4_day_1.csv,trades,4,1,73311,1407,0,0,0,196,7,6,True,True,38e3ec0e68786592e137e60271659782af899f256766ea94368f2fefe8d3a2cb,Found 196 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round4/trades_round_4_day_2.csv,trades,4,2,69732,1333,0,0,0,190,7,6,True,True,106351fe4a458cfcdb70de0ff7b1d7433e75948ee1485481399b81c57dbea829,Found 190 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round4/trades_round_4_day_3.csv,trades,4,3,79098,1541,0,0,0,253,7,6,True,True,6c7829ff5c6652757f34c5a4b32aedbc08b5cdd234f8e7899ce7fc99d6e1f905,Found 253 zero-price trade records (deep-OTM zero bid)
+data/raw/prosperity4/round5/prices_round_5_day_2.csv,prices,5,2,37714171,500000,0,0,0,0,0,0,True,True,301088d6ad51d1d25a0198782aa09e64e4b42d7eac65b2ee1bda5636514578f4,
+data/raw/prosperity4/round5/prices_round_5_day_3.csv,prices,5,3,37831883,500000,0,0,0,0,0,0,True,True,cf829d81df6163640c935cc297591a6200fec14e23fe80fd1ca02c0f7c559d3a,
+data/raw/prosperity4/round5/prices_round_5_day_4.csv,prices,5,4,37757788,500000,0,0,0,0,0,0,True,True,aae5c4b7b840c1e52a4dd07d2e33fdc9759d40fa4b2354f6a9274e6bf4baf7bc,
+data/raw/prosperity4/round5/trades_round_5_day_2.csv,trades,5,2,481593,11090,0,0,0,0,0,0,True,True,5546f9248b5d0f2c5e885a277a1682f940bb1a983f543cb144b1f13cc0d52e88,
+data/raw/prosperity4/round5/trades_round_5_day_3.csv,trades,5,3,535576,12320,0,0,0,0,0,0,True,True,b94c8ac3b9297a571c228de3f2b7e857927837ed6a28134ccfa0e72d6c7965b0,
+data/raw/prosperity4/round5/trades_round_5_day_4.csv,trades,5,4,520911,11975,0,0,0,0,0,0,True,True,f7f9109f0bd26091c3cf4c7a9fdc5ba6e1a4adf777e08a2a0894a1ba2d4c7fb9,

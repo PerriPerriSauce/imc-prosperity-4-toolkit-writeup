@@ -1,0 +1,9 @@
+structure,split,mean,std,adf_t,half_life,notes
+Pebbles 5-Sum (raw sum),IS (Day 2),49999.91,2.816,-71.14,0.18,"min=49981.5, max=50016.0"
+Pebbles 5-Sum (raw sum),IS (Day 3),49999.97,2.758,-71.24,0.12,"min=49981.5, max=50016.5"
+Pebbles 5-Sum (raw sum),OOS (Day 4),49999.94,2.821,-70.16,0.16,"min=49981.5, max=50016.0"
+Snackpack Choc + Van Pair Sum,IS (Day 2),20025.04,42.48,-2.04,375.4,diff_corr=-0.918
+Snackpack Choc + Van Pair Sum,IS (Day 3),19926.89,31.6,-2.8,197.0,Day-specific equilibrium K_3 shifts -98.2 from Day 2
+Snackpack Choc + Van Pair Sum,OOS (Day 4),19870.09,48.22,-1.17,527.3,oos_diff_corr=-0.912
+Snackpack Pis/Straw/Rasp Triplet,IS (Day 2),16746.18,55.33,-1.24,806.4,"weights=[0.493, 0.418, 0.763]"
+Snackpack Pis/Straw/Rasp Triplet,OOS (Day 4),14929.18,44.06,-2.47,382.5,"weights=[0.776, 0.135, 0.616]"

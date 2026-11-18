@@ -30,11 +30,11 @@ with two rules that completely reshape optimal sizing:
 ### Strategic Tension: Queue Jumping Without Price Tipping
 Submitting a passive buy right at the resting clearing price $p_{\text{rest}}^*$ is frequently a trap. Because resting orders at $p_{\text{rest}}^*$ already fill the queue, late entrants placed at the back of $p_{\text{rest}}^*$ collect zero units whenever supply is exhausted by resting bids. Stepping up one tick to $p = p_{\text{rest}}^* + 1$ jumps the entire resting queue at $p_{\text{rest}}^*$. Yet that jump carries an immediate size constraint: if your bid quantity $q$ pushes cumulative demand at $p_{\text{rest}}^* + 1$ high enough to match or exceed cumulative matched volume at $p_{\text{rest}}^*$, the high-price tie-breaker pulls the uniform clearing price itself up to $p_{\text{rest}}^* + 1$, compressing profit per unit across your entire fill.
 
-On our illustrative **Dryland Flax** book solved in [`clear_opening_auction`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L44):
+On our illustrative **Dryland Flax** book solved in [`clear_opening_auction`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L41):
 - Without our order, clearing sits at $p_{\text{rest}}^* = 28$ on `150` units of matched flow. Bidding right at `28` yields **`0.00` XIRECs** (`0` filled behind resting bids).
 - Bidding `(px=29, qty=66)` leaps ahead of the `70` resting units at `28` without tipping clearing above `28`, capturing `66` lots at `28` for **`132.00` XIRECs**. Increasing size past `69` trips the tie-breaker to `29` and cuts profit nearly in half.
 
-Because a live auction also absorbs unpredictable competing human demand around the clearing boundary, [`solve_round1_uncertain_demand`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L583) integrates expected PnL over `250` random human demand draws ($\mathcal{N}(45, 22^2)$ on Flax, $\mathcal{N}(30, 15^2)$ on Mushroom):
+Because a live auction also absorbs unpredictable competing human demand around the clearing boundary, [`solve_round1_uncertain_demand`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L583) integrates expected PnL over `250` random human demand draws ($\mathcal{N}(45, 22^2)$ on Flax, $\mathcal{N}(30, 15^2)$ on Mushroom):
 - **Dryland Flax Final Submission (`px = 30, qty = 65`)**: Raising the limit to `30` (equal to buyback $V$, never above) defends fill probability (`96%` fill rate) when other human bids nudge clearing up to `29` without exposing the fill to winner's-curse overpaying (`68.12` XIRECs EV; bidding `31` loses money whenever clearing prints `31`).
 - **Ember Mushroom Final Submission (`px = 20, qty = 10`)**: The `0.10`/unit fee reduces net ceiling to `19.90`; sizing small (`qty = 10`) captures positive expected surplus (`9.81` XIRECs EV, `73%` fill rate) across uncertain human depth without taking uncapped fee losses if crowding pins clearing at `20`.
 
@@ -53,7 +53,7 @@ Because Speed enters purely multiplicatively, Research $\times$ Scale separates 
 
 $$\frac{R - r^*}{1 + r^*} = \ln(1 + r^*)$$
 
-Solved via bounded bisection in [`optimal_research_given_speed`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L645), every Speed share maps uniquely to an optimal `(Research, Scale)` pair:
+Solved via bounded bisection in [`optimal_research_given_speed`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L646), every Speed share maps uniquely to an optimal `(Research, Scale)` pair:
 
 | Speed Share $p$ | Remaining Budget $R = 100 - p$ | Optimal Research $r^*(p)$ | Optimal Scale $s^*(p)$ | Intrinsic Base $\text{Research}\cdot\text{Scale}$ | Net PnL at `Speed = 0.50` / `0.80` |
 | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -89,9 +89,9 @@ $$\phi(b_2; \bar{b}_2) = \min\!\left(1, \;\left(\frac{920 - \bar{b}_2}{920 - b_2
 ### Why Splitting Beats Single-Bid Quoting—and Protecting Against the Cubic Cliff
 Maximizing single-bid expected profit ($b_1 = b_2$) peaks around `b = 795` at **`63.73` XIRECs/unit**, forcing an unattractive trade-off between losing cheap fills and margin compression on mid-range sellers. Two bids segment the reserve schedule cleanly: $b_1^*$ anchors near `760–775` to capture `+145` to `+160`/unit on lower-reserve sellers, while $b_2^*$ collects high-probability volume higher up the curve.
 
-Inside [`evaluate_gardeners_pair`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L289), differentiating second-bid profit $(920 - b_2)\phi(b_2; \bar{b}_2) \propto (920 - b_2)^{-2}$ for $b_2 < \bar{b}_2$ proves why underwriting error is **asymmetric**: bidding just `15` ticks below $\bar{b}_2$ slashes volume cubically faster than unit profit expands. For any known point belief $\bar{b}_2$, exact best response locks strictly onto $b_2^* = \bar{b}_2$.
+Inside [`evaluate_gardeners_pair`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L289), differentiating second-bid profit $(920 - b_2)\phi(b_2; \bar{b}_2) \propto (920 - b_2)^{-2}$ for $b_2 < \bar{b}_2$ proves why underwriting error is **asymmetric**: bidding just `15` ticks below $\bar{b}_2$ slashes volume cubically faster than unit profit expands. For any known point belief $\bar{b}_2$, exact best response locks strictly onto $b_2^* = \bar{b}_2$.
 
-Because human cohorts carry estimation noise around where $\bar{b}_2$ settles, [`solve_round3_bayesian_belief`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L731) evaluates expected EV across quadratic belief integration $\bar{b}_2 \sim \mathcal{N}(875, 15^2)$ alongside sensitivity checks at conservative (`avg_b2 = 860`) and aggressive (`avg_b2 = 890`) priors:
+Because human cohorts carry estimation noise around where $\bar{b}_2$ settles, [`solve_round3_bayesian_belief`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L732) evaluates expected EV across quadratic belief integration $\bar{b}_2 \sim \mathcal{N}(875, 15^2)$ alongside sensitivity checks at conservative (`avg_b2 = 860`) and aggressive (`avg_b2 = 890`) priors:
 - **Final Portal Submission**: **`Bid 1 = 775, Bid 2 = 880`** (`76.00` XIRECs/unit expected surplus, `76.8%` expected acceptance—intentionally hedging `+5` ticks above the `875` prior mean to shield against the steep cubic drop-off on the downside, while beating naive single-bid quoting by `+19.3%`).
 - **Sensitivity Bound**: Under a softer cohort (`avg_b2 = 860`), theoretical point-optimal `(760, 860)` projects `83.14` EV/unit; even if actual competition lands slightly tighter around `860`, submitting `(775, 880)` sacrifices only `~6–7`/unit of spread while avoiding catastrophic zero-fill risk if the cohort bids `885–895`.
 
@@ -100,7 +100,7 @@ Because human cohorts carry estimation noise around where $\bar{b}_2$ settles, [
 Round 4 presents an exotic option valuation and hedging book on **`AETHER_CRYSTAL`**, initialized at $S_0 = 50$ with zero drift ($\mu = 0$) and **`251%` annualized volatility** sampled at `4` discrete 6-hour steps per day across `252` trading days/year ($\sigma_{\text{step}} = 2.51 / \sqrt{1008} \approx 0.07906$). Two-week contracts settle at `10` trading days and three-week contracts at `15` trading days.
 
 ### Fixing Continuous-Barrier Blindness via Antithetic Discrete Monte Carlo
-Using `60,000` paired antithetic paths under exact martingale log-increments ($\Delta \ln S = -\frac{1}{2}\sigma_{\text{step}}^2 + \sigma_{\text{step}} Z$, `annualized_to_step_sigma(2.51, 4, 252)`), [`price_aether_crystal_contract`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py#L407) evaluates every three-week (`15d`) market quote and `15d` vanilla hedging instrument:
+Using `60,000` paired antithetic paths under exact martingale log-increments ($\Delta \ln S = -\frac{1}{2}\sigma_{\text{step}}^2 + \sigma_{\text{step}} Z$, `annualized_to_step_sigma(2.51, 4, 252)`), [`price_aether_crystal_contract`](../../src/prosperity_toolkit/analysis/manual_challenges.py#L411) evaluates every three-week (`15d`) market quote and `15d` vanilla hedging instrument:
 
 | Contract | Payoff Specification (`15d`, `4/day`) | Portal Quote | Discrete `4/d` Fair Value ($\pm$ SE) | Edge vs Quote | Knock-Out Prob | Action |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |

@@ -13,7 +13,7 @@ flowchart TD
 ## 1. Core Methodological Principles
 
 ### Data Integrity Before Alpha
-No return series, correlation, or backtest is trusted until raw book completeness and sign conventions are verified. Inspecting raw Round 1–2 CSVs revealed `7.5%–8.0%` one-sided books and `14–38` empty books per day (`mid_price == 0.0`). Ignoring those missing-book regimes originally produced spurious $\Delta \text{mid}$ lag-1 jumps and a phantom `818,356` XIRECS drawdown in early testing ([`postmortem.md`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/postmortem.md), `PM-001`). Similarly, deep-OTM Round 3–4 call vouchers (`VEV_6000`, `VEV_6500`) generate `182–253` zero-price prints/day when takers hit `0`-tick bids, requiring explicit non-zero/two-sided filtering prior to volatility calibration.
+No return series, correlation, or backtest is trusted until raw book completeness and sign conventions are verified. Inspecting raw Round 1–2 CSVs revealed `7.5%–8.0%` one-sided books and `14–38` empty books per day (`mid_price == 0.0`). Ignoring those missing-book regimes originally produced spurious $\Delta \text{mid}$ lag-1 jumps and a phantom `818,356` XIRECS drawdown in early testing ([`postmortem.md`](../postmortem.md), `PM-001`). Similarly, deep-OTM Round 3–4 call vouchers (`VEV_6000`, `VEV_6500`) generate `182–253` zero-price prints/day when takers hit `0`-tick bids, requiring explicit non-zero/two-sided filtering prior to volatility calibration.
 
 ### Distinguishing Correlation from Causation
 A statistically significant correlation ($p < 10^{-100}$) does not automatically constitute directional predictive alpha:

@@ -73,7 +73,7 @@ Two economic tensions govern Round 3 strategy design:
 
 A critical failure mode uncovered when backtesting naive textbook Black-Scholes strategies in Round 3 (`PM-004`) is **expiry-schedule misspecification**. Prosperity's `TradingState` does not reveal settlement maturity $\tau$ programmatically (`Day 0` through `Day 3`), and back-inverting the `Day 0 -> Day 2` term decay shows liquidity bots pricing calls on an effective `~8`-day schedule ($\hat{\sigma} \approx 0.20$) rather than `5` days. Hardcoding `T = 5 - d` misvalued `VEV_5100..5500` systematically, causing our parametric baseline (`OptionsVolatilityContract`) to pay/cross bad prices (`-1,222.00` IS, `-7,604.00` OOS).
 
-[`traders/round3/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round3/submission.py) eliminates expiry clock assumptions via three orthogonal mechanisms:
+[`traders/round3/submission.py`](../../traders/round3/submission.py) eliminates expiry clock assumptions via three orthogonal mechanisms:
 
 1. **Day-Invariant Total Implied Volatility (`VEV_5200..5500`)**: Under $r = 0$, Black-Scholes depends solely on total variance $v = \sigma \sqrt{\tau}$:
    $$C_{\text{BS}}(S, K, v) = S\,\Phi\!\left(\frac{\ln(S/K) + \frac{1}{2}v^2}{v}\right) - K\,\Phi\!\left(\frac{\ln(S/K) - \frac{1}{2}v^2}{v}\right)$$

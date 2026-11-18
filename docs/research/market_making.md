@@ -12,7 +12,7 @@ where penny-joining quotes improve best resting bot depth only inside `[r_t - e_
 
 $$q_t + \sum_{k} Q^{\text{buy}}_{t,k} \le Q_{\max}, \qquad q_t - \sum_{k} |Q^{\text{sell}}_{t,k}| \ge -Q_{\max}$$
 
-preventing Prosperity's symbol-wide batch cancellation rule ([`COMPETITION_SPECIFICATION.md`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/competition/COMPETITION_SPECIFICATION.md)).
+preventing Prosperity's symbol-wide batch cancellation rule ([`COMPETITION_SPECIFICATION.md`](../competition/COMPETITION_SPECIFICATION.md)).
 
 ## 2. Parameter Regimes Verified Through Validation Gates (R1–R5)
 
@@ -31,7 +31,7 @@ In Round 5, position caps tighten from `200–300` down to **`±10`** across **`
 $$\text{MM Opportunity Index}_i = \frac{\text{Median Bid-Ask Spread}_i}{\sigma_{\Delta P, i}}$$
 
 1. **High-Margin Categories**: `Snackpacks` (`2.10–3.04`, e.g., `SNACKPACK_PISTACHIO = 3.035`), `UV-Visors` (`1.25–1.32`), `Galaxy Sounds` (`1.25–1.29`), and `Oxygen Shakes` (`1.06–1.30`) compensate inventory variance `1.1x–3.0x` per spread capture. Under tight `±10` bounds, quoting the full `QUOTE_CLIP = 10` capacity captures multi-unit synchronized pulse sweeps (`Galaxy Sounds +24,662.00`, `Oxygen Shakes +16,875.50`).
-2. **Adaptive Guarding on `Robots` & `Microchips`**: These two categories trade at narrow `0.54–0.89` ratios, and `ROBOT_DISHES` spiked `2.8x` in step volatility on held-out `Day 4` (`9.83 -> 27.48`). Rather than losing profitable ticks everywhere or blowing up during volatility spikes, [`traders/round5/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round5/submission.py) applies a wider `LOW_RATIO_EDGE_FRAC = 0.35`, `1.5x` inventory skew, and a dynamic rolling step-volatility guard (`spread >= 0.50 * vol_ema`)—delivering **`+7,124.00`** on `Microchips` and **`+1,240.00`** on `Robots` OOS (`Day 4`) while preserving `PBO = 0.1000` (`DSR = 1.0000`).
+2. **Adaptive Guarding on `Robots` & `Microchips`**: These two categories trade at narrow `0.54–0.89` ratios, and `ROBOT_DISHES` spiked `2.8x` in step volatility on held-out `Day 4` (`9.83 -> 27.48`). Rather than losing profitable ticks everywhere or blowing up during volatility spikes, [`traders/round5/submission.py`](../../traders/round5/submission.py) applies a wider `LOW_RATIO_EDGE_FRAC = 0.35`, `1.5x` inventory skew, and a dynamic rolling step-volatility guard (`spread >= 0.50 * vol_ema`)—delivering **`+7,124.00`** on `Microchips` and **`+1,240.00`** on `Robots` OOS (`Day 4`) while preserving `PBO = 0.1000` (`DSR = 1.0000`).
 
 ## 4. Queue-Aware Discipline vs Touch Bias
 

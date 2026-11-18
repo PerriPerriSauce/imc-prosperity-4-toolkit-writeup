@@ -1,0 +1,7 @@
+counterparty,side,n_trades,mid_move_h1,mid_move_h5,mid_move_h20,mid_move_h50
+Mark 67,buyer,165,1.97,1.945,1.845,1.918
+Mark 55,buyer,598,0.01,0.199,0.409,0.387
+Mark 55,seller,600,-0.036,0.052,-0.106,-0.394
+Mark 49,seller,105,1.9,1.819,1.795,1.986
+Mark 01,buyer,260,0.233,0.29,0.006,-0.135
+Mark 14,buyer,316,-0.187,-0.033,-0.237,-0.53

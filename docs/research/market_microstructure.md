@@ -1,6 +1,6 @@
 # Market Microstructure Across IMC Prosperity 4 (Rounds 1–5)
 
-Quantitative edge in IMC Prosperity 4 originates in classifying order-book depth structure, return autocorrelation, counterparty toxicity, and cross-asset trade synchronization prior to designing quoting logic. Every property below was audited strictly In-Sample (`IS`) before confirmation on held-out Out-of-Sample (`OOS`) sessions ([`prosperity4_manifest.json`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/data/manifests/prosperity4_manifest.json)).
+Quantitative edge in IMC Prosperity 4 originates in classifying order-book depth structure, return autocorrelation, counterparty toxicity, and cross-asset trade synchronization prior to designing quoting logic. Every property below was audited strictly In-Sample (`IS`) before confirmation on held-out Out-of-Sample (`OOS`) sessions ([`prosperity4_manifest.json`](../../data/manifests/prosperity4_manifest.json)).
 
 ## 1. Cross-Round Microstructure Taxonomy
 
@@ -13,7 +13,7 @@ Quantitative edge in IMC Prosperity 4 originates in classifying order-book depth
 
 ## 2. Counterparty Toxicity & Stratified Mark-Outs (Round 4)
 
-Round 4 populated explicit trader IDs on public `market_trades` for `HYDROGEL_PACK` and `VELVETFRUIT_EXTRACT`. A naive pooled mark-out across all symbols falsely ranks `Mark 14` (`+5.83`) ahead of `Mark 67` simply because `Mark 14` happens to lift wider-spread `HYDROGEL_PACK` and `VEV_4000` quotes. Conditioning strictly inside `VELVETFRUIT_EXTRACT` isolates genuine information from product-mix bias ([`r4_counterparty_velvet_midmoves.csv`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/tables/r4_counterparty_velvet_midmoves.csv)):
+Round 4 populated explicit trader IDs on public `market_trades` for `HYDROGEL_PACK` and `VELVETFRUIT_EXTRACT`. A naive pooled mark-out across all symbols falsely ranks `Mark 14` (`+5.83`) ahead of `Mark 67` simply because `Mark 14` happens to lift wider-spread `HYDROGEL_PACK` and `VEV_4000` quotes. Conditioning strictly inside `VELVETFRUIT_EXTRACT` isolates genuine information from product-mix bias ([`r4_counterparty_velvet_midmoves.csv`](../../reports/tables/r4_counterparty_velvet_midmoves.csv)):
 
 | Counterparty (`VELVETFRUIT_EXTRACT`) | Role / Count (`IS`) | `h = +1` Tick Move | `h = +5` Tick Move | `h = +20` Tick Move | `h = +50` Tick Move | Classification |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
@@ -26,7 +26,7 @@ Notice why the bump size requires discipline: on IS validation grids, moderate b
 
 ## 3. Hidden Multi-Asset Generative Structure (Round 5)
 
-Synchronized arrival analysis (`detect_trade_pulses`, [`r5_category_pca_and_pulses.csv`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/tables/r5_category_pca_and_pulses.csv)) and eigen-decomposition uncovered the hidden generator behind all `50` Round 5 goods:
+Synchronized arrival analysis (`detect_trade_pulses`, [`r5_category_pca_and_pulses.csv`](../../reports/tables/r5_category_pca_and_pulses.csv)) and eigen-decomposition uncovered the hidden generator behind all `50` Round 5 goods:
 
 1. **Zero Independent Noise Trades**: Every public print belongs to one of three synchronized Poisson clusters—a **`40`-asset Mega-Cluster (`Group V`, `484` IS / `249` OOS pulses, $\lambda \approx 0.0242–0.0249$)**, **`Pebbles` (`Group P`, `442` / `202`)**, and **`Microchips` (`Group M`, `368` / `201`)**—with **`100.0%` identical trade side and quantity** across every active asset on each pulse timestamp. Because 40 books hit simultaneously in one direction, portfolio correlation matters during extreme ticks even when fundamental prices are uncorrelated.
 2. **Co-Movement vs Independence**: Despite firing on identical pulse timestamps, pairwise return differences across the `8` categories in `Group V` are mutually uncorrelated (`max |corr| <= 0.0294`) *except* **`Snackpacks`** (`max |corr| = 0.9268` IS / `0.9176` OOS; `CHOCOLATE` vs `VANILLA` `-0.918` IS / `-0.912` OOS) and **`Pebbles`** (`condition ratio > 1.66 x 10^6`, constant `50,000` sum across all `5` pebbles with `0.16`-tick half-life OOS).

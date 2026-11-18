@@ -16,7 +16,7 @@ where $\tilde{\gamma}$ scales inversely with position capacity $Q_{\max}$ and pr
 - **Rounds 3–4 (`Q_max = 200` Spot / `300` Options)**: Option net delta ($\sum_K q_K \Delta_K$) aggregates across strikes and re-centers inside `±HEDGE_BAND = 10` on `VELVETFRUIT_EXTRACT` so option inventory never leaves naked directional exposure beyond the `±200` spot limit.
 - **Round 5 (`Q_max = 10` across `50` Assets)**: Raising skew to `1.25` (and `1.875` on high-volatility `Robots`/`Microchips`) while sizing passive quotes to `QUOTE_CLIP = min(10, rem_cap)` maximizes turnover inside tight caps without letting single-direction pulse runs trap full inventory near $\pm 10$.
 
-![INTARIAN_PEPPER_ROOT Inventory Trajectory on Day 0 OOS](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/figures/r1_inventory_trajectory.png)
+![INTARIAN_PEPPER_ROOT Inventory Trajectory on Day 0 OOS](../../reports/figures/r1_inventory_trajectory.png)
 
 ## 3. Prosperity's Starting-Position Limit Constraint
 

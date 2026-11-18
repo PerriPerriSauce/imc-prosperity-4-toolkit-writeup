@@ -68,13 +68,16 @@ data/interim/*
 data/processed/*
 !data/processed/.gitkeep
 
-# Report artifacts
+# Report artifacts (track generated portfolio figures, CSV tables, and experiment logs)
 reports/figures/*
 !reports/figures/.gitkeep
+!reports/figures/*.png
 reports/tables/*
 !reports/tables/.gitkeep
+!reports/tables/*.csv
 reports/experiments/*
 !reports/experiments/.gitkeep
+!reports/experiments/*.md
 
 # Local databases
 *.sqlite

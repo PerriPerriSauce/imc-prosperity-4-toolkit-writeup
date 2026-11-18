@@ -333,6 +333,13 @@ def generate_r1_artifacts(
     plt.close(fig)
 
     # 4. Write structured Experiment Log
+    oos_table_rows = "\n".join(
+        f"| `{r['strategy']}` | `{r['fill_mode']}` | {r['total_pnl']:,.2f} | "
+        f"{r['sharpe_ratio']:.4f} | {r['max_drawdown']:,.2f} | {r['total_trades']:,d} | "
+        f"{r['mean_latency_ms']:.4f} ms |"
+        for r in ablation_rows
+        if r["split"] == "OOS"
+    )
     exp_md = (
         "# Experiment EXP-R1-001: Bot-Wall Fair Value & Penny-Joining Refinement\n\n"
         "- **Hypothesis**: Replacing noisy L1 microprice with maximum-volume resting bot-wall "
@@ -354,6 +361,10 @@ def generate_r1_artifacts(
         f"`PBO = {cscv.pbo:.3f}`, `prob_oos_neg = {cscv.prob_oos_negative:.3f}`\n"
         f"- **Deflated Sharpe Ratio (25 trials)**: `obs_sr = {dsr.observed_sharpe:.4f}`, "
         f"`sr* = {dsr.expected_max_sharpe:.4f}`, `DSR = {dsr.deflated_sharpe_ratio:.4f}`\n\n"
+        "## Held-Out Out-of-Sample Replay (`Day 0`, `10,000` Ticks)\n\n"
+        "| Strategy | Fill Mode | OOS PnL | `Sharpe_252` | Max Drawdown | Fills | Latency |\n"
+        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: |\n"
+        f"{oos_table_rows}\n\n"
         "## Monte Carlo Comparison (Conservative Fills, N=30)\n"
         f"- `SymmetricMM`: Mean PnL `{sym_mc.mean_pnl:.2f}`, Std `{sym_mc.std_pnl:.2f}`, "
         f"VaR95 `{sym_mc.var_95:.2f}`, CVaR95 `{sym_mc.cvar_95:.2f}`, "
@@ -364,7 +375,8 @@ def generate_r1_artifacts(
         "## Conclusion\n"
         "Accepted. The refined specification dominates baseline and uncalibrated candidates "
         "out-of-sample across every fill regime while passing both CSCV (`PBO < 0.15`) "
-        "and DSR (`>= 0.95`).\n"
+        "and DSR (`>= 0.95`). See companion attribution study "
+        "[EXP-R1-002](EXP-R1-002_per_asset_attribution_and_bootstrap.md).\n"
     )
     (exp_dir / "EXP-R1-001_baseline_vs_refined.md").write_text(exp_md, encoding="utf-8")
 

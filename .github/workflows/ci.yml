@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python 3.11 and sync environment
         run: |
           uv python install 3.11
-          uv sync --locked --extra dev
+          uv sync --locked --group dev
 
       - name: Lint and format check
         run: uv run ruff check .
