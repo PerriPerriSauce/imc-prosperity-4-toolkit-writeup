@@ -10,9 +10,18 @@ from pathlib import Path
 import pandas as pd
 
 from prosperity_toolkit.core.exceptions import DataValidationError
-from prosperity_toolkit.data.schemas import PRICE_REQUIRED_COLUMNS, TRADE_REQUIRED_COLUMNS
+from prosperity_toolkit.data.schemas import (
+    OBSERVATION_CSV_COLUMNS,
+    OBSERVATION_REQUIRED_COLUMNS,
+    PRICE_CSV_COLUMNS,
+    PRICE_REQUIRED_COLUMNS,
+    TRADE_CSV_COLUMNS,
+    TRADE_REQUIRED_COLUMNS,
+)
 
-_FILENAME_PATTERN = re.compile(r"^(prices|trades)_round_(\d+)_day_(-?\d+).*\.csv$")
+_FILENAME_PATTERN = re.compile(
+    r"^(prices|trades|observations)_round_(\d+)_day_(-?\d+).*\.csv$",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +87,20 @@ class DataIntegrityValidator:
         return int(df.duplicated(subset=subset).sum())
 
     @staticmethod
+    def detect_observation_duplicates(df: pd.DataFrame) -> int:
+        """Count duplicate timestamp rows in an observations DataFrame."""
+        if "timestamp" not in df.columns:
+            return 0
+        return int(df.duplicated(subset=["timestamp"]).sum())
+
+    @staticmethod
     def validate_price_dataframe(df: pd.DataFrame) -> None:
         """Validate price and order book depth table."""
+        unexpected = sorted(set(df.columns) - set(PRICE_CSV_COLUMNS))
+        if unexpected:
+            msg = f"Unexpected columns in price dataframe: {unexpected}"
+            raise DataValidationError(msg)
+
         for col in PRICE_REQUIRED_COLUMNS:
             if col not in df.columns:
                 msg = f"Missing required column in price dataframe: {col}"
@@ -123,6 +144,16 @@ class DataIntegrityValidator:
                 msg = "Found mid_price == 0.0 on non-empty order book"
                 raise DataValidationError(msg)
 
+        # Check non-negative book prices (0 permitted on deep-OTM call bids)
+        for side in ("bid", "ask"):
+            for lvl in (1, 2, 3):
+                price_col = f"{side}_price_{lvl}"
+                if price_col in df.columns:
+                    present = df[price_col].notna()
+                    if (df[present][price_col] < 0).any():
+                        msg = f"Negative quote price detected in {price_col}"
+                        raise DataValidationError(msg)
+
         # Check spread positivity where top-level bid and ask are both present
         if "bid_price_1" in df.columns and "ask_price_1" in df.columns:
             valid_both = df["bid_price_1"].notna() & df["ask_price_1"].notna()
@@ -163,7 +194,12 @@ class DataIntegrityValidator:
 
     @staticmethod
     def validate_trades_dataframe(df: pd.DataFrame) -> None:
-        """Validate public trades table."""
+        """Validate public trades table (0.0 trade prices permitted for deep-OTM bids)."""
+        unexpected = sorted(set(df.columns) - set(TRADE_CSV_COLUMNS))
+        if unexpected:
+            msg = f"Unexpected columns in trades dataframe: {unexpected}"
+            raise DataValidationError(msg)
+
         for col in TRADE_REQUIRED_COLUMNS:
             if col not in df.columns:
                 msg = f"Missing required column in trades dataframe: {col}"
@@ -185,12 +221,45 @@ class DataIntegrityValidator:
             msg = "Column 'quantity' in trades dataframe must be numeric"
             raise DataValidationError(msg)
 
-        if (df["price"] <= 0).any():
-            msg = "Found non-positive trade price in trades dataframe"
+        if (df["price"] < 0).any():
+            msg = "Found negative trade price in trades dataframe"
             raise DataValidationError(msg)
 
         if (df["quantity"] <= 0).any():
             msg = "Found non-positive trade quantity in trades dataframe"
+            raise DataValidationError(msg)
+
+    @staticmethod
+    def validate_observations_dataframe(df: pd.DataFrame) -> None:
+        """Validate conversion and environmental observations table."""
+        unexpected = sorted(set(df.columns) - set(OBSERVATION_CSV_COLUMNS))
+        if unexpected:
+            msg = f"Unexpected columns in observations dataframe: {unexpected}"
+            raise DataValidationError(msg)
+
+        for col in OBSERVATION_REQUIRED_COLUMNS:
+            if col not in df.columns:
+                msg = f"Missing required column in observations dataframe: {col}"
+                raise DataValidationError(msg)
+
+        if df.empty:
+            msg = "Observations dataframe cannot be empty"
+            raise DataValidationError(msg)
+
+        for col in df.columns:
+            if df[col].isna().any():
+                msg = f"Null values found in observations column: {col}"
+                raise DataValidationError(msg)
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                msg = f"Column '{col}' in observations dataframe must be numeric"
+                raise DataValidationError(msg)
+
+        if (df["bidPrice"] < 0).any() or (df["askPrice"] < 0).any():
+            msg = "Negative quote price in observations dataframe"
+            raise DataValidationError(msg)
+
+        if (df["bidPrice"] >= df["askPrice"]).any():
+            msg = "Crossed observation quote detected (bidPrice >= askPrice)"
             raise DataValidationError(msg)
 
     @staticmethod
@@ -200,7 +269,12 @@ class DataIntegrityValidator:
             msg = "Cannot validate continuity: missing 'timestamp' column"
             raise DataValidationError(msg)
 
-        for product, group in df.groupby("product"):
+        if "product" in df.columns:
+            groups = df.groupby("product")
+        else:
+            groups = [("ALL", df)]
+
+        for product, group in groups:
             sorted_ts = group["timestamp"].sort_values().drop_duplicates()
             diffs = sorted_ts.diff().dropna()
             if not diffs.empty and not (diffs == expected_step).all():
@@ -244,6 +318,15 @@ class DataIntegrityValidator:
                 zero_count = int((df["mid_price"] == 0).sum())
                 if zero_count > 0:
                     warnings.append(f"Found {zero_count} empty-book rows with mid_price == 0.0")
+        elif effective_type == "observations":
+            dup_count = cls.detect_observation_duplicates(df)
+            symbols = []
+            try:
+                cls.validate_observations_dataframe(df)
+            except DataValidationError as err:
+                errors.append(str(err))
+            if dup_count > 0:
+                errors.append(f"Found {dup_count} duplicate timestamp rows in observations")
         else:
             dup_count = cls.detect_trade_duplicates(df)
             symbols = (
@@ -257,6 +340,12 @@ class DataIntegrityValidator:
                 errors.append(str(err))
             if dup_count > 0:
                 warnings.append(f"Found {dup_count} exact duplicate trade records")
+            if "price" in df.columns and not df.empty:
+                zero_price_trades = int((df["price"] == 0).sum())
+                if zero_price_trades > 0:
+                    warnings.append(
+                        f"Found {zero_price_trades} zero-price trade records (deep-OTM zero bid)",
+                    )
 
         return ValidationReport(
             filepath=str(path),

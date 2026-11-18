@@ -96,6 +96,23 @@ Running 1,000 circular block-bootstrap resamples ($L = 100$ ticks) on held-out `
 
 ---
 
-## 4. Methodological Limitations
-1. **Correlated Trials Narrow DSR Hurdle**: Because $N_{\text{eff}} = 1.11$, all 25 grid cells express the same structural mechanism, keeping $V[\{\widehat{\text{SR}}_n\}]$ small ($\text{SR}^* = 0.0043$). DSR is far more stringent when comparing structurally distinct strategy families; here, **CSCV**, **block-bootstrap CIs**, and **30-session Monte Carlo testing** carry the main validation burden.
+## 4. Cross-Round Gate Scorecard & Empirical Overfitting Rejection (Rounds 1–5)
+
+Applying the same five-gate funnel uniformly across all five competition rounds yields high-confidence acceptance for the deployed models—and actively blocked overfit feature engineering before it reached held-out testing:
+
+| Round | Selected Plateau (`IS`) | Local Mean ± Std ($3 \times 3$) | $N_{\text{eff}}$ | `CSCV PBO` | `DSR` | Held-Out OOS PnL | OOS `Sharpe_252` (95% Boot CI) | Gate Status |
+| :---: | :--- | :---: | :---: | :---: | :---: | ---: | :--- | :---: |
+| **R1** | `min_edge=1.5, skew=0.80` | `1.419 ± 0.020` | `1.11` | `0.0860` | `1.0000` | `+22,157.00` | `1.1894` `[1.046, 1.329]` | **Pass** |
+| **R2** | `min_edge=3.5, skew=0.75` | `1.360 ± 0.018` | `1.22` | `0.0000` | `1.0000` | `+27,463.00` | `1.3972` `[1.2314, 1.5823]` | **Pass** |
+| **R3** | `mm_edge=4.5, mm_skew=0.10` | `0.368 ± 0.054` | `1.12` | `0.0000` | `0.9921` | `+7,525.50` | `0.2276` `[0.0097, 0.4392]` | **Pass** |
+| **R4** | `m67_bump=0.5, mm_edge=5.5` | `0.350 ± 0.019` | `1.08` | `0.0571` | `0.9975` | `+11,741.00` | `0.3613` `[0.0932, 0.6302]` | **Pass** |
+| **R4 (Rejected)** | `s_alpha=0.85` aggressive spot chasing | — | — | **`0.9714`** | **`0.9390`** | — *(vetoed)* | — | **Reject** (`PBO >= 0.15`, `DSR < 0.95`) |
+| **R5** | `ef=0.18, sk=1.25` | `0.714 ± 0.015` | `1.30` | `0.1000` | `1.0000` | `+123,173.00` | `0.8109` `[0.5789, 1.0627]` | **Pass** |
+
+### Why Blocking the Aggressive Round 4 Candidate Mattered
+During Round 4 development, an aggressive counterparty spot-chasing variant (`s_alpha = 0.85` plus unconstrained option crossing around `VEV_5000/5100`) improved headline in-sample PnL but drove `CSCV PBO = 0.9714` and dragged `DSR = 0.9390 < 0.95`—nearly every time-slice winner ranked below the OOS median on the complementary partition. Vetoing that variant strictly inside the IS gate kept `traders/round4/submission.py` pinned cleanly onto its `(m67_bump = 0.5, mm_edge = 5.5)` plateau, preserving `PBO = 0.0571` (`DSR = 0.9975`) and beating `Round3Ungated` cleanly on held-out `Day 3`.
+
+## 5. Methodological Limitations
+1. **Correlated Trials Narrow DSR Hurdle**: Because $N_{\text{eff}} \in [1.08, 1.30]$ along continuous grid sweeps, all parameter cells inside a family express variations of the same core edge, keeping $V[\{\widehat{\text{SR}}_n\}]$ small ($\text{SR}^* = 0.0043$ in R1). DSR is far stricter when screening structurally unrelated signal families; here, **CSCV**, **circular block-bootstrap CIs**, and **multi-session Monte Carlo testing** carry the main validation burden.
+2. **Short Chronological Partitions ($2$ Days IS)**: With 20,000 IS ticks split into $S=8$ blocks of 2,500 steps (`1/4` day each), CSCV detects intra-day instability and overfitted spikes well, while genuine multi-day regime shifts (such as `ROBOT_DISHES` volatility exploding `2.8x` on R5 `Day 4`) remain safeguarded by volatility-adaptive quoting rules rather than curve-fit thresholds.
 2. **Contiguous Blocks Under Non-Stationary Drift**: Partitioning contiguous blocks assumes roughly comparable return moments across slices. On drifting instruments, we cross-check CSCV against parametric Monte Carlo simulations (`ProbLoss = 0.00`, $\text{CVaR}_{95} = +344.25$).

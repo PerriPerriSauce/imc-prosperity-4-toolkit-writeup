@@ -48,6 +48,26 @@ TRADE_REQUIRED_COLUMNS: Final[list[str]] = [
     "quantity",
 ]
 
+OBSERVATION_CSV_COLUMNS: Final[list[str]] = [
+    "timestamp",
+    "bidPrice",
+    "askPrice",
+    "transportFees",
+    "exportTariff",
+    "importTariff",
+    "sugarPrice",
+    "sunlightIndex",
+]
+
+OBSERVATION_REQUIRED_COLUMNS: Final[list[str]] = [
+    "timestamp",
+    "bidPrice",
+    "askPrice",
+    "transportFees",
+    "exportTariff",
+    "importTariff",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class PriceRecordSchema:
@@ -83,3 +103,17 @@ class TradeRecordSchema:
     price: float
     quantity: int
     currency: str = "XIRECS"
+
+
+@dataclass(frozen=True, slots=True)
+class ConversionObservationRecordSchema:
+    """Schema descriptor for foreign-exchange and environmental conversion observations."""
+
+    timestamp: int
+    bidPrice: float
+    askPrice: float
+    transportFees: float
+    exportTariff: float
+    importTariff: float
+    sugarPrice: float | None = None
+    sunlightIndex: float | None = None

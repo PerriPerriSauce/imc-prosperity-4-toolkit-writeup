@@ -7,6 +7,13 @@ import json
 from pathlib import Path
 
 from prosperity_toolkit.backtesting.engine import BacktestEngine
+from prosperity_toolkit.competition import (
+    PROSPERITY4_POSITION_LIMITS,
+    PROSPERITY4_R5_CATEGORIES,
+    PROSPERITY4_VOUCHER_STRIKES,
+    get_round_position_limits,
+    get_round_products,
+)
 from prosperity_toolkit.competition.adapter import CompetitionStrategyAdapter
 from prosperity_toolkit.competition.datamodel import (
     ConversionObservation,
@@ -114,3 +121,20 @@ def test_competition_strategy_adapter_and_trader_data_persistence() -> None:
     assert len(result.fills) == 1
     assert result.fills[0].price == 101
     assert result.fills[0].quantity == 1
+
+
+def test_prosperity4_specifications_and_limits() -> None:
+    """Verify Round 0-5 product counts, strike table, and position limits."""
+    assert len(get_round_products(0)) == 2
+    assert len(get_round_products(1)) == 2
+    assert len(get_round_products(2)) == 2
+    assert len(get_round_products(3)) == 12
+    assert len(get_round_products(4)) == 12
+    assert len(get_round_products(5)) == 50
+    assert len(PROSPERITY4_R5_CATEGORIES) == 10
+    assert len(PROSPERITY4_VOUCHER_STRIKES) == 10
+    assert len(PROSPERITY4_POSITION_LIMITS) == 66
+
+    assert get_round_position_limits(3)["VELVETFRUIT_EXTRACT"] == 200
+    assert get_round_position_limits(3)["VEV_5300"] == 300
+    assert all(v == 10 for v in get_round_position_limits(5).values())

@@ -4,47 +4,29 @@
 
 A naive market maker that quotes symmetric offsets around an observed mid-price appears market-neutral on paper—it posts equal bid and ask sizes every tick. In practice, **order arrivals are not symmetric conditional on price trajectory**.
 
-When an asset drifts upward (such as `INTARIAN_PEPPER_ROOT` rising $+1,000$ XIRECS per day) or trends temporarily during an Ornstein-Uhlenbeck excursion (`ASH_COATED_OSMIUM`), passive quotes experience **one-sided fill pressure**:
-- In a downward micro-move, incoming sellers hit our bid repeatedly while our ask sits untouched. We accumulate long inventory $q > 0$ into a falling tape.
-- Without inventory skewing, a symmetric quoter either hits its hard limit $+Q_{\max}$ and stops quoting buyside liquidity altogether, or holds a locked-in directional bet whose mark-to-market variance dwarfs spread capture.
+When an asset drifts systematically (`INTARIAN_PEPPER_ROOT` climbing $+1{,}000$ XIRECS per day) or trends temporarily during an Ornstein-Uhlenbeck excursion (`ASH_COATED_OSMIUM`), passive quotes experience **one-sided fill pressure**. In Round 2 (`±80` cap), unskewed `SymmetricMM_80` suffered `-20,294.50` XIRECS OOS losses precisely because resting asks absorbed buy flow early in each rally and left the book pinned short against a trending tape. Under tighter limits or higher volatility (`±10` cap in Round 5), even two consecutive fills on a `15`-tick random walk without skew expose a quarter of the day's expected spread budget.
 
-That mechanism explains the wild variance observed in our `SymmetricMM` baseline on Round 1:
-- On `Day -2`, `SymmetricMM` accumulated adverse directional inventory and suffered a **`1,723.00` XIRECS** drawdown with only `2,544.00` net PnL.
-- In 30 calibrated Monte Carlo sessions (`conservative` fills), `SymmetricMM` lost money in **20% of runs** with $\text{CVaR}_{95} = -774.25$.
+## 2. Reservation Price Skewing & Capacity Calibration
 
----
-
-## 2. Reservation Price Skewing
-
-To price inventory risk into quotes continuously, we adapt the Avellaneda-Stoikov reservation (indifference) price. Under CARA utility with risk aversion $\gamma > 0$, fair value $FV_t$, variance $\sigma^2$, and inventory $q_t$:
-$$r(FV_t, q_t, t) = FV_t - q_t \gamma \sigma^2 (T - t)$$
-
-For discrete intraday quoting over a rolling operational horizon, we parameterize the effective linear inventory penalty $\tilde{\gamma} = \gamma \sigma^2 (T - t)_{\text{eff}}$:
+Following Avellaneda–Stoikov CARA utility over a local clearing horizon $(T - t)_{\text{eff}}$, we quote symmetrically around the **reservation (indifference) price**:
 $$r_t = FV_t - \tilde{\gamma} \cdot q_{\text{start}}$$
-Quotes are then centered around $r_t$ rather than $FV_t$:
-- **When $q_{\text{start}} > 0$ (long inventory)**: $r_t < FV_t$, shifting both bid and ask downward. This simultaneously lowers our bid (reducing the chance of adding more long exposure) and brings our ask closer to the market (accelerating inventory mean reversion back toward zero).
-- **When $q_{\text{start}} < 0$ (short inventory)**: $r_t > FV_t$, raising both quotes to discourage further shorts and incentivize covering.
+where $\tilde{\gamma}$ scales inversely with position capacity $Q_{\max}$ and proportionally with local innovation variance $\sigma_{\Delta P}^2$:
+- **Round 1 (`Q_max = 20`)**: $\tilde{\gamma} = 0.80$ keeps `INTARIAN_PEPPER_ROOT` inventory tightly mean-centered (`267.00` MaxDD vs `886.00` for `SymmetricMM`, cutting Monte Carlo `ProbLoss` from `20%` to `0%`).
+- **Round 2 (`Q_max = 80`)**: $\tilde{\gamma} = 0.75$ with `min_edge = 3.5` captures full scale capacity (`+27,463.00` OOS, `419.50` MaxDD).
+- **Rounds 3–4 (`Q_max = 200` Spot / `300` Options)**: Option net delta ($\sum_K q_K \Delta_K$) aggregates across strikes and re-centers inside `±HEDGE_BAND = 10` on `VELVETFRUIT_EXTRACT` so option inventory never leaves naked directional exposure beyond the `±200` spot limit.
+- **Round 5 (`Q_max = 10` across `50` Assets)**: Raising skew to `1.25` (and `1.875` on high-volatility `Robots`/`Microchips`) while sizing passive quotes to `QUOTE_CLIP = min(10, rem_cap)` maximizes turnover inside tight caps without letting single-direction pulse runs trap full inventory near $\pm 10$.
 
-### How Much Skew Is Optimal?
-If $\tilde{\gamma}$ is too small (`0.10`), inventory lingers near $\pm Q_{\max}$ during trending segments; if $\tilde{\gamma}$ is too large relative to the half-spread, a moderate position shifts quotes across $FV_t$, sacrificing spread edge unnecessarily. Across our Round 1 2D plateau sweep (`Day -2` & `-1`), increasing $\tilde{\gamma}$ from `0.25` to `0.80` (with `min_edge = 1.5`) kept `INTARIAN_PEPPER_ROOT` inventory tightly mean-centered around `0` rather than pinning at `+20` or `-20`:
-
-![INTARIAN_PEPPER_ROOT Inventory Trajectory on Day 0 OOS](../../reports/figures/r1_inventory_trajectory.png)
-
-Notice in the OOS `Day 0` comparison above how `SymmetricMM` pins at `-20` and `+20` for thousands of consecutive ticks (creating huge exposure to adverse moves), whereas `Round1Submission` ($\tilde{\gamma} = 0.80$) cycles cleanly around neutral inventory—cutting OOS drawdown by **70%** (`886.00 -> 267.00`) and eliminating negative Monte Carlo tail sessions (`ProbLoss: 0.20 -> 0.00`, $\text{CVaR}_{95}: -774.25 \to +344.25$).
-
----
+![INTARIAN_PEPPER_ROOT Inventory Trajectory on Day 0 OOS](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/figures/r1_inventory_trajectory.png)
 
 ## 3. Prosperity's Starting-Position Limit Constraint
 
 A subtle exchange mechanic in IMC Prosperity causes many theoretically sound market makers to fail silently in production: **the exchange evaluates position limits simultaneously across ALL orders submitted in a tick against the tick's starting inventory $q_{\text{start}}$**, *not* sequentially after your own aggressive taker orders fill.
 
 ### Concrete Failure Example
-Suppose $Q_{\max} = 20$ and you enter the tick with $q_{\text{start}} = +12$:
-1. Your taker logic spots a mispriced ask of size `5` and submits `Order(SYM, ask, +5)`.
-2. **Buggy allocation**: You track a local `post_take_pos = 12 + 5 = 17`, compute `sell_capacity = 20 + 17 = 37`, and post a passive ask of size `-25` (or think `buy_capacity = 20 - 17 = 3` and forget worst-case checks if multiple passive orders exist). Even worse: if you enter at `q_start = -15`, take `+10` (thinking `post_take_pos = -5`), and then try to sell `-15` passively because `-5 - (-20) = 15`, the exchange checks:
-   $$q_{\text{start}} + q_{\text{sell, total}} = -15 - 15 = -30 < -20$$
-   and **cancels your entire order batch for that product**!
-3. **Correct invariant**: Always allocate passive capacities strictly from `start_pos` minus same-direction taker quantities:
-   $$q_{\text{rem, buy}} = \max(0, Q_{\max} - q_{\text{start}} - q_{\text{take, buy}})$$
-   $$q_{\text{rem, sell}} = \max(0, Q_{\max} + q_{\text{start}} - q_{\text{take, sell}})$$
-   Our `ExecutionSimulator.validate_orders_against_limits` and `tests/unit/test_strategies.py` enforce this exact exchange invariant on every tick.
+Suppose $Q_{\max} = 20$ and you enter the tick with $q_{\text{start}} = -15$. Your taker logic buys `+10` against a mispriced ask (assuming `post_take_pos = -5`) and then tries to quote passively short `-15` (assuming `-5 - 15 = -20`). Because the exchange evaluates both legs independently against starting inventory:
+$$q_{\text{start}} + \sum_{Q_o < 0} Q_o = -15 - 15 = -30 < -20$$
+the engine **cancels your entire order batch for that product**!
+
+To guarantee zero silent cancellations across all 50 securities:
+$$q_{\text{rem, buy}} = \max(0, Q_{\max} - q_{\text{start}} - q_{\text{take, buy}}), \qquad q_{\text{rem, sell}} = \max(0, Q_{\max} + q_{\text{start}} - q_{\text{take, sell}})$$
+where $q_{\text{take, buy}}, q_{\text{take, sell}} \ge 0$ accumulate strictly across taker legs before computing remaining passive capacity. Every submission trader (`traders/round{1..5}/submission.py`), `ExecutionSimulator.validate_orders_against_limits`, and integration suite verifies zero worst-case limit breaches under this rule.

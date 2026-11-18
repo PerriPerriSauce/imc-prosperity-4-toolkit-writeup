@@ -31,16 +31,19 @@ class DataLoader:
         path = Path(filepath)
         inferred_type, _, _ = parse_round_day_from_filename(path)
         effective_type = dataset_type or inferred_type
-        if effective_type not in {"prices", "trades"}:
+        if effective_type not in {"prices", "trades", "observations"}:
             msg = (
-                f"Cannot determine dataset_type ('prices' or 'trades') for {path}. "
-                "Specify dataset_type explicitly."
+                f"Cannot determine dataset_type ('prices', 'trades', or 'observations') "
+                f"for {path}. Specify dataset_type explicitly."
             )
             raise DataValidationError(msg)
 
         if effective_type == "prices":
             raw_df = SemicolonCSVParser.parse_prices_csv(path)
             cleaned = DataNormalizer.clean_prices(raw_df)
+        elif effective_type == "observations":
+            raw_df = SemicolonCSVParser.parse_observations_csv(path)
+            cleaned = DataNormalizer.clean_observations(raw_df)
         else:
             raw_df = SemicolonCSVParser.parse_trades_csv(path)
             cleaned = DataNormalizer.clean_trades(raw_df)
@@ -66,6 +69,19 @@ class DataLoader:
         DataIntegrityValidator.validate_trades_dataframe(cleaned)
         return cleaned
 
+    @staticmethod
+    def load_observations_csv(
+        filepath: Path | str,
+        check_continuity: bool = False,
+    ) -> pd.DataFrame:
+        """Load, normalize, and validate an observations CSV file from an explicit path."""
+        df = SemicolonCSVParser.parse_observations_csv(filepath)
+        cleaned = DataNormalizer.clean_observations(df)
+        DataIntegrityValidator.validate_observations_dataframe(cleaned)
+        if check_continuity:
+            DataIntegrityValidator.validate_timestamp_continuity(cleaned)
+        return cleaned
+
     def _resolve_raw_file(self, round_num: int, filename: str) -> Path:
         candidates = [
             self.data_root / "raw" / "prosperity4" / f"round{round_num}" / filename,
@@ -86,3 +102,8 @@ class DataLoader:
         """Load and validate trades for a given round and day."""
         filename = f"trades_round_{round_num}_day_{day_num}.csv"
         return self.load_trades_csv(self._resolve_raw_file(round_num, filename))
+
+    def load_day_observations(self, round_num: int, day_num: int) -> pd.DataFrame:
+        """Load and validate observations for a given round and day."""
+        filename = f"observations_round_{round_num}_day_{day_num}.csv"
+        return self.load_observations_csv(self._resolve_raw_file(round_num, filename))

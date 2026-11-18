@@ -1,4 +1,4 @@
-"""Stage 6 Parameter Sensitivity, CSCV/PBO, and DSR Validation on Round 1 IS Data."""
+"""Parameter Sensitivity, CSCV/PBO, and DSR Validation on Round 1 IS Data."""
 
 from __future__ import annotations
 

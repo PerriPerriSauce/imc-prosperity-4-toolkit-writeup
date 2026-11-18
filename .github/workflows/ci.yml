@@ -2,34 +2,38 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
   pull_request:
-    branches: [ main ]
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Set up Python 3.11 and sync environment
+        run: |
+          uv python install 3.11
+          uv sync --locked --extra dev
 
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint and format check with Ruff
+      - name: Lint and format check
         run: uv run ruff check .
 
-      - name: Type check with mypy
+      - name: Static type check
         run: uv run mypy .
 
-      - name: Run test suite with pytest
-        run: uv run pytest -ra --cov=prosperity_toolkit
+      - name: Validate Round 1-5 submission files
+        run: |
+          uv run python scripts/validate_submission.py traders/round1/submission.py
+          uv run python scripts/validate_submission.py traders/round2/submission.py
+          uv run python scripts/validate_submission.py traders/round3/submission.py
+          uv run python scripts/validate_submission.py traders/round4/submission.py
+          uv run python scripts/validate_submission.py traders/round5/submission.py
+
+      - name: Run unit and integration test suite
+        run: uv run pytest

@@ -2,11 +2,12 @@
 
 ## 1. Raw Market Data Ingestion & Immutability
 
-The IMC Prosperity 4 exchange exports two primary historical feeds per trading day as UTF-8, semicolon-delimited (`;`) CSV files:
-1. **Prices & Level 1–3 Order Book Depths (`prices_round_<R>_day_<D>.csv`)**: 17 columns capturing `day`, `timestamp`, `product`, 3 levels of bid/ask prices and volumes, `mid_price`, and `profit_and_loss`.
-2. **Public Executed Trades (`trades_round_<R>_day_<D>.csv`)**: 7 columns capturing `timestamp`, `buyer`, `seller`, `symbol`, `currency` (`XIRECS`), `price`, and `quantity`.
+The IMC Prosperity 4 exchange exports two historical feeds per trading day across all `6` competition stages (Rounds 0–5, `34` CSV files total) as UTF-8, semicolon-delimited (`;`) CSVs:
+1. **Prices & Level 1–3 Order Book Depths (`prices_round_<R>_day_<D>.csv`)**: `17` columns capturing `day`, `timestamp`, `product`, 3 levels of bid/ask prices and volumes, `mid_price`, and `profit_and_loss`.
+2. **Public Executed Trades (`trades_round_<R>_day_<D>.csv`)**: `7` columns capturing `timestamp`, `buyer`, `seller`, `symbol`, `currency` (`XIRECS`), `price`, and `quantity`.
+3. **Optional Conversion Observations (`observations_round_<R>_day_<D>.csv`)**: Supported explicitly via [`schemas.py`](../../src/prosperity_toolkit/data/schemas.py) (`OBSERVATION_CSV_COLUMNS` matching `ConversionObservation`), though absent in all Prosperity 4 Round 0–5 datasets.
 
-To guarantee strict data hygiene, files in `data/raw/` are treated as immutable read-only sources. Every ingested file is assigned a cryptographic **SHA-256 checksum** via `compute_sha256()` and logged in [data/README.md](../../data/README.md).
+Files under `data/raw/` remain strictly immutable read-only artifacts, hashed via `compute_sha256()` and indexed in [`prosperity4_manifest.json`](../../data/manifests/prosperity4_manifest.json).
 
 ---
 
@@ -14,35 +15,27 @@ To guarantee strict data hygiene, files in `data/raw/` are treated as immutable 
 
 ```mermaid
 flowchart LR
-    Raw["Raw CSV (Immutable)<br/>data/raw/prosperity4/"] --> Parse["SemicolonCSVParser<br/>(sep=';')"]
+    Raw["Raw CSV (Immutable)<br/>data/raw/prosperity4/round0..5"] --> Parse["SemicolonCSVParser<br/>(Prices / Trades / Observations)"]
     Parse --> Norm["DataNormalizer<br/>(Strip headers/symbols, cast types, sort)"]
-    Norm --> Val["DataIntegrityValidator<br/>(Schema, L1-L3 monotonicity, duplicates, SHA-256)"]
-    Val --> Report["ValidationReport<br/>(Errors, warnings, null audit)"]
+    Norm --> Val["DataIntegrityValidator<br/>(Strict column whitelist, L1-L3 ladder, dups, SHA-256)"]
+    Val --> Report["ValidationReport<br/>(Errors, warnings, zero-price & empty-book counts)"]
     Val --> Snap["build_snapshots_from_dataframes<br/>(OrderBookL2 negative sell_orders)"]
 ```
 
 ---
 
-## 3. Empirical Schema Edge Cases Handled
+## 3. Empirical Schema Edge Cases Handled Across Rounds 0–5
 
-Direct inspection of the ingested Round 0 (`4` files) and Round 1 (`6` files) raw datasets uncovered four critical edge cases that naive CSV parsers mishandle:
+Direct auditing of all **`34` raw datasets** uncovered five non-obvious competition edge cases that break naive CSV loaders:
 
 1. **Inverted Ask-Volume Sign Convention**:
-   - Raw CSVs store `ask_volume_{1,2,3}` as **positive** integers, whereas the Prosperity `OrderDepth.sell_orders` contract requires **negative** integers. `build_snapshots_from_dataframes` enforces `asks[int(ap)] = -abs(int(av))` during snapshot reconstruction.
+   - Raw CSVs store `ask_volume_{1,2,3}` as **positive** integers, whereas `OrderDepth.sell_orders` requires **negative** integers (`build_snapshots_from_dataframes` enforces `-abs(int(av))`).
 2. **Empty Order Books (`mid_price == 0.0`)**:
-   - In Round 1 `ASH_COATED_OSMIUM`, `34–35` ticks per day have **both** bid and ask books completely empty, recorded by the exchange with `mid_price == 0.0`.
-   - `DataIntegrityValidator` explicitly permits `mid_price == 0.0` *only* when `bid_price_1` and `ask_price_1` are both `NaN` (emitting an audit warning with the exact row count), while raising `DataValidationError` if `mid_price == 0.0` appears on a non-empty book or if `mid_price < 0`.
-3. **One-Sided Order Books (`7.5%–8.0%` of Round 1 ticks)**:
-   - When one side of the book vanishes, the exchange logs the remaining single side's price as `mid_price`, injecting $\pm 8$ tick jumps into raw `mid_price` series. Research and mark-to-market layers handle one-sided ticks explicitly via `extract_two_sided_mid()` and carry-forward valuation.
-4. **Duplicate Trade Prints**:
-   - `trades_round_1_day_-2.csv` contains `2` exact duplicate trade rows (identical timestamp, symbol, price, and quantity with empty `buyer`/`seller`). `DataIntegrityValidator.detect_trade_duplicates()` flags exact trade duplicates as warnings (since multiple identical bot prints can occur on the same tick), while rejecting duplicate `(timestamp, product)` rows in price tables as hard errors.
-
----
-
-## 4. Microstructural Invariants Enforced
-
-1. **Spread Positivity**: On every two-sided row, $P_{\text{ask}, 1}(t) - P_{\text{bid}, 1}(t) > 0$.
-2. **Strict L1–L3 Ladder Monotonicity**:
-   $$P_{\text{bid}, 1} > P_{\text{bid}, 2} > P_{\text{bid}, 3}, \qquad P_{\text{ask}, 1} < P_{\text{ask}, 2} < P_{\text{ask}, 3}$$
-3. **Volume Positivity**: All non-null level volumes and trade quantities must be strictly positive.
-4. **Discrete Timestamp Continuity**: `validate_timestamp_continuity()` verifies uniform `100`-unit steps ($t_k - t_{k-1} = 100$ across $t \in [0, 999{,}900]$).
+   - In Round 1 & Round 2 (`ASH_COATED_OSMIUM` and `INTARIAN_PEPPER_ROOT`), `28–38` ticks/day have both bid and ask empty, logged with `mid_price == 0.0`. `DataIntegrityValidator` permits `mid_price == 0.0` strictly when both `bid_price_1` and `ask_price_1` are `NaN`, rejecting non-empty zero mid-prices.
+3. **One-Sided Order Books (`~7.5%` of Round 1–2 ticks)**:
+   - Round 1 (`1,480–1,563`/day) and Round 2 (`1,479–1,500`/day) record the remaining single quote as `mid_price` when one side vanishes; Rounds 0, 3, 4, and 5 are `100.0%` two-sided (`0` empty/one-sided rows).
+4. **Zero-Price Deep-OTM Voucher Quotes & Trades (Rounds 3–4)**:
+   - Deep out-of-the-money call vouchers `VEV_6000` and `VEV_6500` quote `bid_price_1 == 0, ask_price_1 == 1` across all `10,000` ticks/day and execute `182–253` zero-price trade prints/day when bots sell into the `0`-bid. `DataIntegrityValidator` strictly rejects **negative** quotes/trades (`< 0`) while logging `0.0` trades as structured audit warnings.
+5. **Counterparty Population Regime & Duplicate Prints**:
+   - `buyer` and `seller` columns (`Mark 01..67`) are populated solely in Round 4; Round 1 `Day -2` trades contain `2` exact duplicate rows flagged cleanly as warnings while price `(timestamp, product)` duplicates remain hard errors.
+   - Unexpected extra columns fail validation explicitly (`Unexpected columns in ... dataframe`).

@@ -1,8 +1,9 @@
-"""Generate Stage 6 diagnostic figures, summary tables, and experiment logs."""
+"""Generate Round 1 diagnostic figures, summary tables, and experiment logs."""
 
 from __future__ import annotations
 
 import csv
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -32,8 +33,6 @@ from prosperity_toolkit.strategies import (
     NoOpBaselineStrategy,
     SymmetricMarketMaker,
 )
-from scripts.evaluate_round0_round1 import _load_round1_trader
-from scripts.run_optimisation import ParameterizedRound1Strategy
 
 
 def _reconstruct_positions(
@@ -60,6 +59,13 @@ def generate_r1_artifacts(
     exp_dir: Path = Path("reports/experiments"),
 ) -> None:
     """Create figures, CSV/Markdown tables, and structured experiment logs for Round 1."""
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+    from scripts.evaluate_round0_round1 import _load_round1_trader
+    from scripts.run_optimisation import ParameterizedRound1Strategy
+
     fig_dir.mkdir(parents=True, exist_ok=True)
     table_dir.mkdir(parents=True, exist_ok=True)
     exp_dir.mkdir(parents=True, exist_ok=True)
@@ -234,9 +240,9 @@ def generate_r1_artifacts(
     inv_trajectories: dict[str, list[int]] = {}
     for label, strat in [
         ("SymmetricMM (Baseline)", SymmetricMarketMaker(r1_cfgs)),
-        ("InventorySkewedMM (Stage 5)", InventorySkewedMarketMaker(r1_cfgs)),
+        ("InventorySkewedMM", InventorySkewedMarketMaker(r1_cfgs)),
         (
-            "Round1Submission (Stage 6)",
+            "Round1Submission",
             CompetitionStrategyAdapter(_load_round1_trader(), name="Round1Submission"),
         ),
     ]:
@@ -258,7 +264,7 @@ def generate_r1_artifacts(
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(9.5, 4.2))
-    for label in ("SymmetricMM (Baseline)", "Round1Submission (Stage 6)"):
+    for label in ("SymmetricMM (Baseline)", "Round1Submission"):
         ax.plot(inv_trajectories[label], label=label, linewidth=1.1, alpha=0.85)
     ax.axhline(20, color="#6c757d", linestyle=":", label="Assumed Limit (+20 / -20)")
     ax.axhline(-20, color="#6c757d", linestyle=":")
@@ -304,7 +310,7 @@ def generate_r1_artifacts(
 
     fig, ax = plt.subplots(figsize=(9.0, 4.8))
     ax.hist(sym_mc.pnl_distribution, bins=12, alpha=0.55, label="SymmetricMM (Baseline)")
-    ax.hist(sub_mc.pnl_distribution, bins=12, alpha=0.65, label="Round1Submission (Stage 6)")
+    ax.hist(sub_mc.pnl_distribution, bins=12, alpha=0.65, label="Round1Submission")
     ax.axvline(
         sym_mc.var_95,
         color="#1f77b4",
@@ -356,11 +362,11 @@ def generate_r1_artifacts(
         f"VaR95 `{sub_mc.var_95:.2f}`, CVaR95 `{sub_mc.cvar_95:.2f}`, "
         f"ProbLoss `{sub_mc.prob_loss:.2f}`\n\n"
         "## Conclusion\n"
-        "Accepted. The refined specification dominates baseline and Stage 5 candidates "
+        "Accepted. The refined specification dominates baseline and uncalibrated candidates "
         "out-of-sample across every fill regime while passing both CSCV (`PBO < 0.15`) "
         "and DSR (`>= 0.95`).\n"
     )
-    (exp_dir / "EXP-R1-001_stage5_vs_stage6.md").write_text(exp_md, encoding="utf-8")
+    (exp_dir / "EXP-R1-001_baseline_vs_refined.md").write_text(exp_md, encoding="utf-8")
 
 
 def main() -> int:
@@ -369,7 +375,7 @@ def main() -> int:
         print("Round 1 raw data not found; skipping artifact generation.")
         return 0
     generate_r1_artifacts()
-    print("Generated Stage 6 figures, CSV tables, and experiment log under reports/.")
+    print("Generated Round 1 diagnostic figures, CSV tables, and experiment log under reports/.")
     return 0
 
 

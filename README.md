@@ -1,160 +1,108 @@
-# IMC Prosperity 4 — Quantitative Research Toolkit & Writeup
+# IMC Prosperity 4 — Quantitative Trading Research & Multi-Round Strategy Portfolio
 
-[![CI](https://github.com/ADnocap/IMC_Prosperity4/actions/workflows/ci.yml/badge.svg)](https://github.com)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3118/)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Type Checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+> **Executive Deliverables**: Start with [FINAL_WRITEUP.md](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/FINAL_WRITEUP.md), the standalone PDF monograph [IMC_Prosperity4_Research_Writeup.pdf](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/IMC_Prosperity4_Research_Writeup.pdf), the interactive portfolio tearsheet [dashboard.html](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/reports/dashboard.html), and the manual-challenge monograph [MANUAL_CHALLENGES.md](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/manual/MANUAL_CHALLENGES.md).
 
-A high-performance, reproducible quantitative trading research toolkit, backtesting framework, and strategy writeup for the **IMC Prosperity 4** algorithmic trading competition (April 2026).
+An end-to-end **Python 3.11** quantitative research toolkit, queue-aware event replay simulator, vectorized Monte Carlo stress engine, combinatorial overfitting gate suite (`CSCV PBO`, `DSR`, block bootstrap), and competition-compliant strategy library for all five rounds of **IMC Prosperity 4**—built with strict separation between research infrastructure (`src/prosperity_toolkit/`) and zero-dependency submission traders (`traders/round{1..5}/submission.py`).
 
 ---
 
-## 1. Project Overview
+## Key Verified Results (`queue_aware` Held-Out Out-of-Sample Replay)
 
-**IMC Prosperity 4** was an international algorithmic trading competition organized by IMC Trading spanning 5 rounds, challenging participants to design automated trading algorithms across diverse asset classes (including mean-reverting minerals, drifting agricultural products, spatial conversion arbitrage, and cross-sectional 50-asset joint books).
+*Disclaimer: Every trading metric below reflects **simulated chronological out-of-sample replays** on archived historical books under [`FillMode.QUEUE_AWARE`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/execution/simulator.py), **not** live leaderboard outcomes.*
 
-This repository serves as both:
-1. **A Quantitative Research & Simulation Toolkit (`prosperity_toolkit`)**: A Python-first modular backtester, Level 2 order book reconstructor, execution simulator, and statistical optimization suite.
-2. **A Strategy Writeup & Technical Archive (`docs/`, `notebooks/`)**: An exhaustive record of mathematical models, microstructure hypotheses, parameter calibration experiments, and post-mortems demonstrating institutional-grade quantitative workflow.
+| Round | Focus & Active Universe | `Q_max` | Held-Out OOS Day | OOS PnL (`queue_aware`) | OOS `Sharpe_252` (`95% CI`) | `CSCV PBO` | `DSR` | Mean Latency / Tick | Submission |
+| :--- | :--- | :---: | :---: | ---: | :--- | :---: | :---: | ---: | :--- |
+| **Round 1** | Bot-wall FV, affine drift, penny-join (`2` assets) | `20` *(stressed)* | `Day 0` | **`+22,157.00`** | `1.1894` `[1.046, 1.329]` | `0.0860` | `1.0000` | `0.0340 ms` | [`round1/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round1/submission.py) |
+| **Round 2** | Scaled skew + MAF auction MC (`2` assets) | `80` | `Day 1` | **`+27,463.00`** | `1.3972` `[1.2314, 1.5823]` | `0.0000` | `1.0000` | `0.0406 ms` | [`round2/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round2/submission.py) |
+| **Round 3** | Total-vol BS options & delta band (`12` assets) | `200`/`300` | `Day 2` | **`+7,525.50`** | `0.2276` `[0.0097, 0.4392]` | `0.0000` | `0.9921` | `0.1872 ms` | [`round3/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round3/submission.py) |
+| **Round 4** | Live `Mark 67` counterparty flow (`12` assets) | `200`/`300` | `Day 3` | **`+11,741.00`** | `0.3613` `[0.0932, 0.6302]` | `0.0571` | `0.9975` | `0.1871 ms` | [`round4/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round4/submission.py) |
+| **Round 5** | Lag-free 50-asset MM, vol-guard & atomic `Pebbles` | **`10`** (`x50`) | `Day 4` | **`+123,173.00`** | `0.8109` `[0.5789, 1.0627]` | `0.1000` | `1.0000` | `0.6920 ms` | [`round5/submission.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/traders/round5/submission.py) |
+| **Total** | — | — | — | **`+192,059.50`** | — | `<= 0.100` | `>= 0.992` | `<= 0.6920 ms` | — |
 
----
+- **Manual Challenges (`R1–R5`)**: Uncertain-demand auction optimization (`R1`: Flax `(30, 65)`, Mushroom `(20, 10)`), Poisson Cognitive Hierarchy (`R2`: `L1–L3` converging to submitted `42%` Speed / `15%` Research / `43%` Scale), Bayesian two-bid screening (`R3`: submitted `(775, 880)`), `251%` annualized discrete `6h` Broadie–Glasserman–Kou exotic Monte Carlo + hedged 5-contract portfolio (`R4`: `-15 / -50 / +198 / +5 / +21`), and 9 Ignith goods exact KKT + quadratic-variance portfolio optimization (`R5`: `+35 / +29 / -23 / -10 / +3%`) implemented in [`manual_challenges.py`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/src/prosperity_toolkit/analysis/manual_challenges.py).
 
-## 2. Repository Structure
+## Repository Architecture
 
 ```text
-imc-prosperity-4-toolkit-writeup/
-│
-├── .agent/workflows/         # Agentic research & execution workflow instructions
-├── .agents/rules/            # Project rules (documentation, research, testing, trading)
-├── .github/                  # CI automation (GitHub Actions) & issue templates
-├── config/                   # Declarative YAML configurations (replay, search, defaults)
-│   ├── default.yaml
-│   ├── backtest.yaml
-│   └── optimisation.yaml
-│
-├── data/                     # Historical market data (strictly separated & immutable)
-│   ├── raw/                  # Immutable raw competition CSVs (read-only)
-│   ├── interim/              # Intermediate data representations
-│   ├── processed/            # Cleaned, schema-validated binary Parquet files
-│   └── README.md             # Data provenance policy and checksum manifest
-│
-├── docs/                     # Comprehensive quantitative writeup & documentation
-│   ├── architecture/         # System design, data pipeline, and backtester engine
-│   ├── methodology/          # Research standards, backtesting protocols, statistical tests
-│   ├── rounds/               # Round-by-round asset dynamics and mechanics (R1 to R5)
-│   ├── research/             # Microstructure, fair value, market making, arbitrage, options
-│   ├── experiments/          # Empirical hypothesis and trial registry
-│   ├── postmortem.md         # Anomaly post-mortems and root cause analysis (RCA)
-│   └── limitations.md        # Explicit simulation bounds and modeling assumptions
-│
-├── notebooks/                # Exploratory Jupyter research notebooks (EDA, calibration)
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_market_microstructure.ipynb
-│   ├── 03_fair_value_analysis.ipynb
-│   ├── 04_strategy_comparison.ipynb
-│   └── 05_parameter_optimisation.ipynb
-│
-├── reports/                  # Generated research artifacts
-│   ├── figures/              # Exported publication-grade matplotlib figures
-│   ├── tables/               # Formatted summary metric tables
-│   └── experiments/          # Output records from parameter optimization runs
-│
-├── scripts/                  # Standalone CLI tools & utility wrappers
-│   ├── inspect_data.py       # Data integrity and schema validation utility
-│   ├── run_backtest.py       # Historical replay runner
-│   ├── run_optimisation.py   # Parameter search runner
-│   ├── generate_report.py    # Report synthesis script
-│   └── validate_submission.py# Single-file submission verification tool
-│
-├── src/prosperity_toolkit/   # Core installable Python package
-│   ├── core/                 # Primitives (models, events, interfaces, exceptions)
-│   ├── data/                 # Loaders, parsers, normalizers, schemas, validators
-│   ├── market/               # L2 order book, order flow, indicators, fair value
-│   ├── strategies/           # Base contracts and strategy archetypes
-│   ├── execution/            # Simulators, fill models, position limit checking
-│   ├── backtesting/          # Portfolio accounting, replay loop, metrics, results
-│   ├── optimisation/         # Grid search, objectives, sensitivity analysis
-│   ├── analysis/             # Descriptive statistics, risk metrics, DSR diagnostics
-│   ├── competition/          # Authoritative datamodel, state adapter, AST validator
-│   └── visualisation/        # Standardized tearsheet charts and markdown dashboards
-│
-├── traders/                  # Standalone competition submissions (competition boundary)
-│   ├── datamodel.py          # Standalone competition datamodel (zero toolkit dependencies)
-│   └── round{1..5}/          # Round submission artifacts
-│
-├── tests/                    # Comprehensive automated test suite
-│   ├── conftest.py           # Shared fixtures
-│   ├── fixtures/             # Synthetic market test fixtures
-│   ├── unit/                 # Unit tests (math, metrics, order book, accounting)
-│   └── integration/          # End-to-end replay and strategy lifecycle tests
-│
-├── .gitattributes            # Line ending normalization
-├── .gitignore                # Build artifact and credential exclusions
-├── .python-version           # Pinned Python version (3.11)
-├── AGENTS.md                 # Agent instructions and system requirements
-├── LICENSE                   # MIT License
-├── pyproject.toml            # Project dependencies and tool configurations
-└── uv.lock                   # Deterministic dependency lockfile
+.
+├── src/prosperity_toolkit/
+│   ├── analysis/           # Microstructure EDA, CSCV PBO, DSR, N_eff, bootstrap, manual solvers
+│   ├── backtesting/        # Deterministic replay engine, position limits, batch cancellation
+│   ├── competition/        # Local Prosperity 4 datamodel, submission validator, strategy adapter
+│   ├── data/               # Prosperity CSV ingestion, SHA-256 dataset manifest & integrity checks
+│   ├── execution/          # conservative / queue_aware / touch execution matching
+│   ├── optimisation/       # Grid sweep, neighborhood stability, sensitivity surface helpers
+│   ├── simulation/         # Vectorized OU/RW/Jump/Options MC engine with synthetic bot books
+│   ├── strategies/         # Research & ablation baselines (NoOp, SymmetricMM, EMA, Options, etc.)
+│   └── visualisation/      # Matplotlib performance plots + self-contained HTML portfolio tearsheet
+├── traders/round{1..5}/    # Standalone competition-ready Trader implementations & local runner tests
+├── scripts/                # Reproducible CLI pipelines for EDA, R1-R5 backtests, manual solvers & dashboard
+├── tests/                  # Unit and end-to-end integration test suites (pytest, ruff, mypy clean)
+├── docs/
+│   ├── competition/        # Verified rules, product limits & CSV format specification
+│   ├── architecture/       # System, backtester, Monte Carlo, and data pipeline blueprints
+│   ├── methodology/        # Backtesting, research workflow & anti-overfitting mathematics
+│   ├── research/           # Cross-round microstructure, FV, MM, options & arbitrage studies
+│   ├── rounds/             # Per-round analyses (`round_1.md`..`round_5.md`, `final_round.md`)
+│   ├── manual/             # Manual Challenges documentation (`MANUAL_CHALLENGES.md`)
+│   ├── experiments/        # Registered experiment index (`EXP-R1-001`..`EXP-R5-001`)
+│   ├── limitations.md      # Modeling boundaries, simulation approximations & epistemic tags
+│   └── postmortem.md       # Incident log (`PM-001`..`PM-005`) documenting resolved strategy failures
+├── notebooks/              # Exploratory Jupyter research notebooks (01-05)
+└── reports/                # Generated CSV tables, figures, FINAL_WRITEUP.md & dashboard.html
 ```
 
 ---
 
-## 3. Installation Instructions
+## Reproducible Setup & Verification
 
-This project requires **Python 3.11** and uses [`uv`](https://github.com/astral-sh/uv) for fast, deterministic dependency and virtual environment management.
-
-### Prerequisites
-
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed.
-- Python 3.11 available on the system.
-
-### One-Command Setup
+Using `uv` (Python 3.11+):
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/imc-prosperity-4-toolkit-writeup.git
-cd imc-prosperity-4-toolkit-writeup
-
-# Synchronize virtual environment and install in editable mode
-uv sync
+uv sync --all-extras
 ```
 
----
-
-## 4. Development & Verification Commands
+### Run Quality & Submission Verification Gates
 
 ```bash
-# Run complete test suite with coverage
+# Unit and integration tests
 uv run pytest
 
-# Static type checking across src/ and tests/
+# Lint and strict static type checks
+uv run ruff check .
 uv run mypy .
 
-# Code linting and style enforcement
-uv run ruff check .
-
-# Code formatting check
-uv run ruff format --check .
-
-# Validate a competition submission script for sandbox compliance
+# Validate every standalone competition submission interface & runtime constraints
 uv run python scripts/validate_submission.py traders/round1/submission.py
+uv run python scripts/validate_submission.py traders/round2/submission.py
+uv run python scripts/validate_submission.py traders/round3/submission.py
+uv run python scripts/validate_submission.py traders/round4/submission.py
+uv run python scripts/validate_submission.py traders/round5/submission.py
+```
+
+### Reproduce Research Tables, Figures & HTML Tearsheet
+
+```bash
+# Dataset integrity verification against data/manifests/prosperity4_manifest.json
+uv run python scripts/audit_all_datasets.py
+
+# Round 1 IS/OOS ablations, CSCV, DSR, bootstrap & MC artifacts
+uv run python scripts/generate_report.py
+
+# Rounds 2-5 cross-round EDA, strategy ablations, validation gates & MC stress suites
+uv run python scripts/eda_rounds2_to_5.py
+uv run python scripts/evaluate_rounds2_to_5.py
+
+# Manual Challenges (R1-R5), HTML dashboard & standalone PDF monograph
+uv run python scripts/evaluate_manual_challenges.py
+uv run python scripts/build_dashboard.py
+uv run python scripts/build_pdf_writeup.py
 ```
 
 ---
 
-## 5. Data Provenance Policy
+## Epistemic Standards & Attribution
 
-In accordance with strict quantitative research ethics (Rule 7):
-- **Raw Data Immutability**: All original historical CSV files stored under `data/raw/` are treated as read-only and never mutated.
-- **Traceability**: All derived tables in `data/processed/` are generated via reproducible scripts recorded with SHA-256 checksums in `data/manifest.json`.
-- **Attribution**: Source filenames, dates of acquisition, and schema invariants are cataloged in [`data/README.md`](data/README.md).
-
----
-
-## 6. Research Methodology Principles
-
-1. **Hypothesis-Driven Alpha**: Every strategy begins with an economic rationale or microstructure inefficiency before any parameters are tuned.
-2. **Conservative Execution Modeling**: We deliberately penalize passive limit fills in historical replay to avoid optimistic fill bias.
-3. **Overfitting Corrections**: We apply the **Deflated Sharpe Ratio (DSR)** and **Combinatorial Symmetric Cross-Validation (CSCV)** to correct for multiple testing across parameter trials.
-4. **Separation of Concerns**: Competition-facing code (`traders/`) is kept strictly decoupled from research infrastructure (`src/prosperity_toolkit/`) to guarantee sandbox compatibility.
+- Raw historical market data files reside untouched under `data/raw/prosperity4/` with filenames and SHA-256 hashes audited in [`prosperity4_manifest.json`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/data/manifests/prosperity4_manifest.json).
+- All empirical claims cleanly separate **observed order books**, **in-sample estimated parameters**, **queue-aware simulated replays**, **synthetic Monte Carlo runs**, and **parameterized manual-challenge beliefs**.
+- Full engineering caveats, unverified competition edge limits, and carried action items are maintained in [`limitations.md`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/limitations.md) and [`postmortem.md`](file:///c:/Users/pierr/Desktop/imc-prosperity-4-toolkit-writeup/docs/postmortem.md).

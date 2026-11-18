@@ -33,8 +33,8 @@ class OrderRequest:
         if self.quantity == 0:
             msg = f"Order quantity cannot be zero for symbol {self.symbol}"
             raise ValueError(msg)
-        if self.price <= 0:
-            msg = f"Order price must be strictly positive, got {self.price}"
+        if self.price < 0:
+            msg = f"Order price cannot be negative, got {self.price}"
             raise ValueError(msg)
 
     @property

@@ -40,9 +40,9 @@ Unlike Round 0 (`EMERALDS`, `TOMATOES`) where 100% of ticks are two-sided, Round
 
 ---
 
-## 3. Bot-Tier Microstructure & Stage 6 Strategy Refinement
+## 3. Bot-Tier Microstructure & Strategy Refinement
 
-Inspecting L1–L3 depth on `Day -2` and `Day -1` reveals **why** our initial Stage 5 market maker left substantial edge on the table:
+Inspecting L1–L3 depth on `Day -2` and `Day -1` reveals **why** our initial skewed market maker left substantial edge on the table:
 1. **Two-Tier Bot Quoting**: Approximately `68%` of two-sided books contain a second resting tier `2–3` ticks behind L1, while the primary structural bot walls sit wide (`median spread = 16` on `ASH_COATED_OSMIUM`, `12–13` on `INTARIAN_PEPPER_ROOT`).
 2. **Filtering Transient Inside Noise**: When thin inside-spread quotes appear momentarily at L1, L1 microprice gets pulled away from true fair value. Selecting the **maximum-volume resting price level** on each side (`_popular_wall_mid`) anchors fair value directly to the structural market-maker bot walls.
 3. **Penny-Improving Inside Wide Spreads**: Quoting fixed `reservation ± 2.0` inside a 16-tick spread sacrifices `5–6` ticks of spread capture per fill. Instead, we quote:
@@ -68,8 +68,8 @@ All figures below are **Simulated Results** generated via `scripts/evaluate_roun
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `NoOpBaseline` | 0.00 (MaxDD 0) | 0.00 (MaxDD 0) | 0.00 (MaxDD 0) | 0.00 (MaxDD 0) | 0.00 (MaxDD 0) |
 | `SymmetricMM` (Baseline) | 2,544.00 (MaxDD 1,723.0) | 14,461.00 (MaxDD 945.0) | 10,825.00 (MaxDD 886.0) | 10,825.00 (MaxDD 886.0) | 11,895.00 (MaxDD 913.5) |
-| `InventorySkewedMM` (Stage 5) | 13,767.00 (MaxDD 443.5) | 11,825.00 (MaxDD 754.0) | 9,067.00 (MaxDD 837.5) | 9,067.00 (MaxDD 837.5) | 9,087.00 (MaxDD 855.5) |
-| **`Round1Submission` (Stage 6)** | **23,084.50 (MaxDD 304.0)** | **23,057.00 (MaxDD 262.0)** | **22,151.00 (MaxDD 267.0)** | **22,157.00 (MaxDD 267.0)** | **22,667.00 (MaxDD 274.5)** |
+| `InventorySkewedMM` | 13,767.00 (MaxDD 443.5) | 11,825.00 (MaxDD 754.0) | 9,067.00 (MaxDD 837.5) | 9,067.00 (MaxDD 837.5) | 9,087.00 (MaxDD 855.5) |
+| **`Round1Submission`** | **23,084.50 (MaxDD 304.0)** | **23,057.00 (MaxDD 262.0)** | **22,151.00 (MaxDD 267.0)** | **22,157.00 (MaxDD 267.0)** | **22,667.00 (MaxDD 274.5)** |
 
 - **Per-Tick Latency**: `Round1Submission` executes at `0.038–0.045 ms/tick` over 10,000 ticks (more than 20x under a `1.0 ms` budget).
 
@@ -79,6 +79,6 @@ All figures below are **Simulated Results** generated via `scripts/evaluate_roun
 | Strategy | Mean PnL | Std Dev | $\text{VaR}_{95}$ | $\text{CVaR}_{95}$ | $\mathbb{P}(\text{Loss})$ |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `SymmetricMM` (Baseline) | 359.52 | 496.20 | $-451.87$ | $-774.25$ | 0.20 |
-| **`Round1Submission` (Stage 6)** | **900.48** | **319.06** | **+446.18** | **+344.25** | **0.00** |
+| **`Round1Submission`** | **900.48** | **319.06** | **+446.18** | **+344.25** | **0.00** |
 
 ![Calibrated Monte Carlo PnL Distribution](../../reports/figures/r1_mc_pnl_distribution.png)

@@ -1,27 +1,15 @@
 # Data Manifests & Validation Reports
 
-This directory stores structured dataset manifests, SHA-256 checksum registries, and ingestion validation reports produced by `prosperity_toolkit.data.validation.DataIntegrityValidator`.
+This directory stores machine-readable dataset manifests and integrity audit logs generated across all immutable source files in `data/raw/prosperity4/`.
 
-## Manifest Fields
+## Generated Artifacts
+- [`prosperity4_manifest.json`](prosperity4_manifest.json): Full per-file SHA-256 registry, row counts, null audits, symbol checks, timestamp continuity results, and ingestion warnings for all `34` raw CSV files (`round0`–`round5`).
+- CSV summary table: [`reports/tables/data_inventory_summary.csv`](../../reports/tables/data_inventory_summary.csv).
 
-Every ingested dataset manifest records:
-- **Source**: Origin repository or official competition portal URL.
-- **Retrieval Date**: ISO 8601 date of acquisition (`YYYY-MM-DD`).
-- **Original Filename**: Exact filename at retrieval (`prices_round_<R>_day_<D>.csv` or `trades_round_<R>_day_<D>.csv`).
-- **File Format**: UTF-8, semicolon-delimited (`;`) CSV.
-- **Schema**: Verified column names and types (`PRICE_CSV_COLUMNS` / `TRADE_CSV_COLUMNS`).
-- **SHA-256 Checksum**: Computed via `prosperity_toolkit.data.validation.compute_sha256`.
-- **Known Limitations**: E.g., empty-book ticks (`mid_price == 0.0`), empty `buyer`/`seller` columns in Round 0–1, or duplicate trade prints.
-- **Verification Status**: `Valid` (0 structural errors) or `Invalid` with explicit error diagnostics.
-
-## Generating a Manifest Report
+## Regenerating & Verifying Checksums
 
 ```bash
-uv run python -c "
-from pathlib import Path
-from prosperity_toolkit.data.loader import DataLoader
-for p in sorted(Path('data/raw/prosperity4').rglob('*.csv')):
-    _, rep = DataLoader.ingest_csv(p)
-    print(rep.filepath, rep.is_valid, rep.sha256)
-"
+uv run python scripts/audit_all_datasets.py
 ```
+
+Every ingested file is checked against `DataIntegrityValidator` (schema column whitelist/required fields, L1–L3 monotonicity, non-crossing spreads, empty-book & deep-OTM zero-price audit warnings, duplicate detection, and `100`-step timestamp continuity) without touching raw files on disk.

@@ -29,3 +29,15 @@ class DataNormalizer:
         if "timestamp" in cleaned.columns:
             cleaned["timestamp"] = cleaned["timestamp"].astype(int)
         return cleaned.sort_values(by=["timestamp", "symbol"]).reset_index(drop=True)
+
+    @staticmethod
+    def clean_observations(df: pd.DataFrame) -> pd.DataFrame:
+        """Standardize environmental and conversion observation records."""
+        cleaned = df.copy()
+        cleaned.columns = [c.strip() for c in cleaned.columns]
+        if "timestamp" in cleaned.columns:
+            cleaned["timestamp"] = cleaned["timestamp"].astype(int)
+        for col in cleaned.columns:
+            if col != "timestamp":
+                cleaned[col] = pd.to_numeric(cleaned[col], errors="coerce")
+        return cleaned.sort_values(by=["timestamp"]).reset_index(drop=True)

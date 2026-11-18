@@ -2,6 +2,13 @@
 
 from prosperity_toolkit.strategies.base import BaseStrategy
 from prosperity_toolkit.strategies.baseline import NoOpBaselineStrategy
+from prosperity_toolkit.strategies.basket import (
+    BasketStrategyContract,
+    ConstantSumBasketArbStrategy,
+    ConstantSumBasketConfig,
+    PairSumConfig,
+    PairSumMeanReversionStrategy,
+)
 from prosperity_toolkit.strategies.market_making import (
     InventorySkewedMarketMaker,
     MarketMakingConfig,
@@ -13,9 +20,18 @@ from prosperity_toolkit.strategies.mean_reversion import (
     OUMeanReversionConfig,
     OUMeanReversionStrategy,
 )
+from prosperity_toolkit.strategies.options import (
+    OptionsStrategyContract,
+    OptionStrikeSpec,
+    OptionsVolatilityConfig,
+    OptionsVolatilityStrategy,
+)
 
 __all__ = [
     "BaseStrategy",
+    "BasketStrategyContract",
+    "ConstantSumBasketArbStrategy",
+    "ConstantSumBasketConfig",
     "DriftAwareConfig",
     "DriftAwareQuoter",
     "InventorySkewedMarketMaker",
@@ -23,5 +39,11 @@ __all__ = [
     "NoOpBaselineStrategy",
     "OUMeanReversionConfig",
     "OUMeanReversionStrategy",
+    "OptionStrikeSpec",
+    "OptionsStrategyContract",
+    "OptionsVolatilityConfig",
+    "OptionsVolatilityStrategy",
+    "PairSumConfig",
+    "PairSumMeanReversionStrategy",
     "SymmetricMarketMaker",
 ]

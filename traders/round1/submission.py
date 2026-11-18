@@ -1,4 +1,4 @@
-"""Standalone IMC Prosperity 4 Round 1 Submission Trader (Refined Stage 6).
+"""Standalone IMC Prosperity 4 Round 1 Submission Trader.
 
 Microstructure Design:
 - Uses max-volume resting bot-wall midpoint (`_popular_wall_mid`) to filter out
