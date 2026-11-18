@@ -85,3 +85,7 @@ reports/experiments/*
 *.wasm
 target/
 node_modules/
+
+.agent/
+.agents/
+AGENTS.md
