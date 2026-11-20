@@ -99,7 +99,8 @@ class InventorySkewedMarketMaker(BaseStrategy):
     ) -> float | None:
         book = state.get_book(sym)
         if book is not None and book.best_bid is not None and book.best_ask is not None:
-            obs = book.weighted_mid_price or ((book.best_bid + book.best_ask) / 2.0)
+            wmid = book.weighted_mid_price
+            obs = wmid if wmid is not None else ((book.best_bid + book.best_ask) / 2.0)
             prev = self._ema_fv.get(sym, obs)
             ema = cfg.ema_alpha * obs + (1.0 - cfg.ema_alpha) * prev
             self._ema_fv[sym] = ema

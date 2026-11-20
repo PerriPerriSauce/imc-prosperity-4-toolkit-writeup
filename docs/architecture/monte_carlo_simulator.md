@@ -2,48 +2,43 @@
 
 ## 1. Motivation & Role in the Backtesting Stack
 
-Historical CSV replay suffers from **passive fill non-endogeneity**: recorded public trades do not react to resting quotes placed by a candidate strategy. To evaluate market-making and inventory-skewed quoting without optimistic fill bias, the simulator generates synthetic market sessions driven by calibrated stochastic fair-value processes and autonomous counterparty order flow.
+Historical CSV replay suffers from **passive fill non-endogeneity**: recorded public trades do not react to resting quotes placed by a candidate strategy. To stress market-making and inventory-skewed strategies under controlled arrival intensity, spread width, and adverse selection, `prosperity_toolkit.simulation` generates synthetic market sessions driven by calibrated fair-value dynamics and configurable execution stress.
 
 ---
 
-## 2. Stochastic Fair-Value Processes (`simulation/processes.py`)
+## 2. Stochastic Fair-Value Processes (`simulation/processes.py`, `joint_scenarios.py`)
 
 ### A. Exact Ornstein-Uhlenbeck (OU) Discretization
 For mean-reverting assets, fair value $S_t$ follows:
 $$dS_t = \theta (\mu - S_t)\,dt + \sigma\,dW_t$$
-Rather than using Euler-Maruyama (which introduces discretization bias when $\theta \Delta t$ is non-negligible), we sample from the exact Gaussian transition density:
+Rather than Euler-Maruyama discretization (which biases persistence when $\theta \Delta t$ is non-negligible), we sample from the exact Gaussian transition density:
 $$S_{t+\Delta t} = \mu + (S_t - \mu)e^{-\theta \Delta t} + \sigma \sqrt{\frac{1 - e^{-2\theta \Delta t}}{2\theta}}\,Z_t, \quad Z_t \sim \mathcal{N}(0, 1)$$
-As $t \to \infty$, the process converges to the stationary distribution:
-$$S_\infty \sim \mathcal{N}\left(\mu, \frac{\sigma^2}{2\theta}\right)$$
 
-### B. Arithmetic Random Walk with Drift
-For trending or non-stationary instruments:
-$$S_{t+\Delta t} = S_t + \mu_{\text{drift}}\,\Delta t + \sigma\sqrt{\Delta t}\,Z_t$$
+### B. Arithmetic Random Walk with Drift & Coupled Suites
+For trending instruments (`INTARIAN_PEPPER_ROOT`), fair value follows $S_{t+\Delta t} = S_t + \mu_{\text{drift}}\,\Delta t + \sigma\sqrt{\Delta t}\,Z_t$. Multi-asset scenario builders (`run_joint_mc_suite`, `run_round5_pulse_mc_suite`) generate coupled spot/call voucher books (`R3`/`R4`), counterparty impulse prints (`R4`), and synchronized 11-asset representative pulse clusters (`R5`).
 
 ---
 
-## 3. Synthetic Book & Counterparty Flow (`simulation/synthetic_book.py`, `pulses.py`)
+## 3. Fill Regimes, Adverse Selection Stress & Statistical Bounds (`simulation/scenario.py`)
 
-1. **Market-Maker Bot Book**: Around each simulated $FV_t$, discrete integer top-of-book quotes are constructed:
-   $$P_{\text{bid}, 1} = \lfloor FV_t - \delta_1 \rfloor, \quad P_{\text{ask}, 1} = \lceil FV_t + \delta_1 \rceil$$
-   with strict non-crossing enforcement ($P_{\text{bid}, 1} < P_{\text{ask}, 1}$) and optional L2 ladder depth.
-2. **Counterparty Order Arrivals**: Vectorized Bernoulli/uniform-size draws generate signed taker arrivals $Q_t \in \mathbb{Z}$ across `(n_sessions, n_steps)`, converted into synthetic `TradePrint` events at the prevailing touch.
-3. **Correlated Multi-Asset Pulses**: `generate_correlated_pulses` models simultaneous cross-asset liquidity/price shocks across instrument groups.
+To guard against optimistic synthetic quoting results:
+1. **`fill_mode` Propagation**: `ExecutionSimulator` runs every Monte Carlo path with explicit `fill_mode` (`queue_aware` or `conservative`, rather than collapsing maker fills to `touch`).
+2. **Adverse-Selection Stress Parameter (`adverse_selection_prob`)**: Under the `AdverseStress` regime (`adverse_selection_prob > 0`), taker fills precede an immediate adversarial jump in the synthetic fair value in the direction of the aggressor, directly taxing stale resting quotes (e.g., `Round3Submission_AdverseStress` exhibits `30.0%` loss frequency vs. `2.5%` calibrated `QA`; `Round1Submission_AdverseStress` rises from `0.0%` to `7.5%`).
+3. **Finite-Sample Wilson Upper Bounds (`wilson_ci_upper`)**: When `0` of `N = 40` synthetic sessions lose money, reporting "0% probability of loss" overstates certainty. `MonteCarloSummary` reports `prob_loss_ci95_upper` using the 95% Wilson binomial upper bound (`0.0876` = `8.76%` upper bound for `0/40` losses).
 
 ---
 
-## 4. Tail-Risk & Distributional Evaluation (`simulation/scenario.py`)
+## 4. Tail-Risk & Distributional Evaluation
 
-Across $N$ independent sessions, `MonteCarloSummary` reports:
-- **Location & Dispersion**: Mean PnL, Median PnL, Standard Deviation of PnL.
-- **Value at Risk ($\text{VaR}_{95}$)**: Empirical 5th percentile of terminal session PnL.
-- **Conditional Value at Risk ($\text{CVaR}_{95}$ / Expected Shortfall)**: Mean terminal PnL across the worst 5% of sessions ($\text{CVaR}_{95} \le \text{VaR}_{95}$).
-- **Probability of Loss**: $\mathbb{P}(\text{PnL}_T < 0)$.
+Across $N = 40$ independent `1,000`-step sessions, `MonteCarloSummary` reports:
+- **Location & Dispersion**: Mean PnL, Median PnL, Standard Deviation of PnL, Mean Unannualized `IR_tick`.
+- **Value at Risk ($\text{VaR}_{95}$)** & **Conditional Value at Risk ($\text{CVaR}_{95}$)**: Empirical 5th percentile and tail expectation ($\text{CVaR}_{95} \le \text{VaR}_{95}$).
+- **Loss Rate & Bounds**: Sample `prob_loss` alongside 95% Wilson upper bound `prob_loss_ci95_upper`, Mean Max Drawdown, and Worst Max Drawdown.
 
 ---
 
 ## 5. Model Assumptions & Limitations
 
-1. **Gaussian Innovation Assumption**: Standard OU and Brownian motion innovations assume thin-tailed normal increments unless augmented with jump pulses; extreme tail events may be understated.
-2. **Exogenous Arrival Intensity**: Counterparty arrival probability is currently constant per tick rather than state-dependent (e.g., Hawkes self-exciting or spread-elastic).
-3. **Synthetic vs. Actual**: Monte Carlo outputs represent *simulated* distributions under explicit parametric assumptions and must never be presented as actual competition results.
+1. **Gaussian Innovation Assumption**: Standard OU and Brownian motion innovations assume thin-tailed normal increments unless augmented with jump pulses; extreme tail events may still be understated.
+2. **Exogenous Arrival Intensity**: Counterparty arrival probability is exogenous rather than price-impact-endogenous beyond the injected adverse-selection stress probability.
+3. **Synthetic vs. Actual**: Monte Carlo outputs represent *simulated* stress distributions under parametric assumptions and must never be presented as actual competition results.

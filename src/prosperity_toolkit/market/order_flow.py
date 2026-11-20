@@ -34,10 +34,23 @@ class OrderFlowTracker:
             self._trades.pop(0)
 
     def net_volume_imbalance(self, symbol: Symbol) -> int:
-        """Compute signed net buy vs sell volume over recorded window."""
-        symbol_trades = [t for t in self._trades if t.symbol == symbol]
-        # In trade reports, buyer/seller identification helps assess buyer-initiated flow
-        return sum(t.quantity for t in symbol_trades)
+        """Compute signed net buy vs sell volume over the recorded window.
+
+        Supports explicitly signed `quantity` (positive buy, negative sell) as
+        well as unsigned positive prints tagged asymmetrically on `buyer` vs `seller`.
+        Returns 0 for unsigned prints where neither side identifies an aggressor.
+        """
+        imbalance = 0
+        for trade in self._trades:
+            if trade.symbol != symbol:
+                continue
+            if trade.quantity < 0:
+                imbalance += trade.quantity
+            elif trade.buyer and not trade.seller:
+                imbalance += trade.quantity
+            elif trade.seller and not trade.buyer:
+                imbalance -= trade.quantity
+        return imbalance
 
     @property
     def trades(self) -> Sequence[TradePrint]:

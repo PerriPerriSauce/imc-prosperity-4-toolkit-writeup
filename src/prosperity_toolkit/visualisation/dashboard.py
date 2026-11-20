@@ -31,6 +31,23 @@ def _encode_png_data_uri(path: Path) -> str | None:
     return f"data:image/png;base64,{b64}"
 
 
+def _normalize_gate_row(row: dict[str, str]) -> dict[str, str]:
+    """Normalize overfitting gate rows across R1 and R2-R5 CSV schemas."""
+    return {
+        "round": row.get("round", ""),
+        "plateau_params": row.get("plateau_params", ""),
+        "is_ir_tick": row.get("is_ir_tick") or row.get("is_sharpe_252") or "0",
+        "local_mean": row.get("local_mean", "0"),
+        "local_std": row.get("local_std", "0"),
+        "n_eff": row.get("n_eff", ""),
+        "cscv_pbo": row.get("cscv_pbo", "0"),
+        "dsr_block": row.get("dsr_block") or row.get("dsr") or "0",
+        "oos_pnl": row.get("oos_pnl", "0"),
+        "oos_ir_tick": row.get("oos_ir_tick") or row.get("oos_sharpe_252") or "0",
+        "oos_block_sharpe_1k": row.get("oos_block_sharpe_1k", "0"),
+    }
+
+
 class ResearchDashboard:
     """Formats simulation summaries into Markdown tables and interactive HTML tearsheets."""
 
@@ -52,50 +69,53 @@ class ResearchDashboard:
         base = Path(tables_dir)
         algo_oos_rows: list[dict[str, Any]] = []
 
-        # Round 1 OOS rows
         r1_rows = _read_csv_rows(base / "r1_ablation_summary.csv")
         for r in r1_rows:
             if r.get("split") == "OOS":
-                algo_oos_rows.append(
-                    {
-                        "round": "R1",
-                        "fill_mode": r.get("fill_mode", ""),
-                        "strategy": r.get("strategy", ""),
-                        "total_pnl": _to_float(r.get("total_pnl")),
-                        "sharpe_252": _to_float(r.get("sharpe_ratio")),
-                        "max_drawdown": _to_float(r.get("max_drawdown")),
-                        "total_fills": int(_to_float(r.get("total_trades"))),
-                        "mean_latency_ms": _to_float(r.get("mean_latency_ms")),
-                    }
-                )
+                algo_oos_rows.append({
+                    "round": "R1",
+                    "fill_mode": r.get("fill_mode", ""),
+                    "strategy": r.get("strategy", ""),
+                    "total_pnl": _to_float(r.get("total_pnl")),
+                    "ir_tick": _to_float(r.get("ir_tick") or r.get("sharpe_ratio")),
+                    "block_sharpe_1k": _to_float(r.get("block_sharpe_1k")),
+                    "pnl_to_max_dd": _to_float(r.get("pnl_to_max_dd")),
+                    "max_drawdown": _to_float(r.get("max_drawdown")),
+                    "total_fills": int(_to_float(r.get("total_trades") or r.get("total_fills"))),
+                    "mean_latency_ms": _to_float(r.get("mean_latency_ms")),
+                })
 
-        # Rounds 2-5 OOS rows
         for rnd in (2, 3, 4, 5):
             for r in _read_csv_rows(base / f"r{rnd}_ablation_summary.csv"):
                 if r.get("split") == "OOS":
-                    algo_oos_rows.append(
-                        {
-                            "round": f"R{rnd}",
-                            "fill_mode": r.get("fill_mode", ""),
-                            "strategy": r.get("strategy", ""),
-                            "total_pnl": _to_float(r.get("total_pnl")),
-                            "sharpe_252": _to_float(r.get("sharpe_252")),
-                            "max_drawdown": _to_float(r.get("max_drawdown")),
-                            "total_fills": int(_to_float(r.get("total_fills"))),
-                            "mean_latency_ms": _to_float(r.get("mean_latency_ms")),
-                        }
-                    )
+                    algo_oos_rows.append({
+                        "round": f"R{rnd}",
+                        "fill_mode": r.get("fill_mode", ""),
+                        "strategy": r.get("strategy", ""),
+                        "total_pnl": _to_float(r.get("total_pnl")),
+                        "ir_tick": _to_float(r.get("ir_tick") or r.get("sharpe_252")),
+                        "block_sharpe_1k": _to_float(r.get("block_sharpe_1k")),
+                        "pnl_to_max_dd": _to_float(r.get("pnl_to_max_dd")),
+                        "max_drawdown": _to_float(r.get("max_drawdown")),
+                        "total_fills": int(_to_float(r.get("total_fills"))),
+                        "mean_latency_ms": _to_float(r.get("mean_latency_ms")),
+                    })
 
-        gates = _read_csv_rows(base / "r2_to_r5_overfitting_gates.csv")
+        gates_raw = _read_csv_rows(base / "r1_overfitting_gates.csv") + _read_csv_rows(
+            base / "r2_to_r5_overfitting_gates.csv",
+        )
+        gates = [_normalize_gate_row(g) for g in gates_raw]
         mc_r1 = _read_csv_rows(base / "r1_mc_risk_summary.csv")
         mc_r2_r5 = _read_csv_rows(base / "r2_to_r5_mc_risk_summary.csv")
-        bootstrap_rows = _read_csv_rows(base / "r2_to_r5_bootstrap_and_attribution.csv")
+        bootstrap_rows = _read_csv_rows(base / "r1_bootstrap_and_attribution.csv") + _read_csv_rows(
+            base / "r2_to_r5_bootstrap_and_attribution.csv",
+        )
         manual_rows = _read_csv_rows(base / "manual_challenges_summary.csv")
 
         submissions_qa = [
             row
             for row in algo_oos_rows
-            if row["fill_mode"] == "queue_aware" and "Submission" in str(row["strategy"])
+            if row["fill_mode"] == "queue_aware" and str(row["strategy"]).endswith("Submission")
         ]
 
         return {
@@ -126,20 +146,35 @@ class ResearchDashboard:
         manual_rows: list[dict[str, str]] = list(context.get("manual_rows", []))
 
         total_qa_pnl = sum(float(r["total_pnl"]) for r in subs)
+        phase1_pnl = sum(float(r["total_pnl"]) for r in subs if r.get("round") in {"R1", "R2"})
+        phase2_pnl = sum(
+            float(r["total_pnl"]) for r in subs if r.get("round") in {"R3", "R4", "R5"}
+        )
         max_lat = max((float(r["mean_latency_ms"]) for r in subs), default=0.0)
-        max_pbo = max((_to_float(g.get("cscv_pbo")) for g in gates), default=0.0)
-        mc_probs = [_to_float(m.get("prob_loss")) for m in mc_r2_r5]
+        min_dsr = min((_to_float(g.get("dsr_block")) for g in gates), default=0.0)
+
+        cal_probs: list[float] = []
+        stress_probs: list[float] = []
         for m in mc_r1:
-            if "Submission" in m.get("strategy", ""):
-                mc_probs.append(_to_float(m.get("prob_loss")))
-        max_mc_prob_loss = max(mc_probs, default=0.0)
+            name = m.get("strategy", "")
+            if "Submission" in name:
+                target = stress_probs if "Stress" in name else cal_probs
+                target.append(_to_float(m.get("prob_loss")))
+        for m in mc_r2_r5:
+            name = m.get("scenario", "")
+            target = stress_probs if "Stress" in name else cal_probs
+            target.append(_to_float(m.get("prob_loss")))
+        max_cal_loss = max(cal_probs, default=0.0)
+        max_stress_loss = max(stress_probs, default=0.0)
 
         sub_rows_html = "\n".join(
             f"<tr><td>{escape(str(r['round']))}</td>"
             f"<td><code>{escape(str(r['strategy']))}</code></td>"
             f"<td class='num'>{r['total_pnl']:,.2f}</td>"
-            f"<td class='num'>{r['sharpe_252']:.4f}</td>"
+            f"<td class='num'>{r['ir_tick']:.5f}</td>"
+            f"<td class='num'>{r['block_sharpe_1k']:.3f}</td>"
             f"<td class='num'>{r['max_drawdown']:,.2f}</td>"
+            f"<td class='num'>{r['pnl_to_max_dd']:.2f}</td>"
             f"<td class='num'>{r['total_fills']:,d}</td>"
             f"<td class='num'>{r['mean_latency_ms']:.4f} ms</td></tr>"
             for r in subs
@@ -150,7 +185,8 @@ class ResearchDashboard:
             f"<td>{escape(str(r['fill_mode']))}</td>"
             f"<td><code>{escape(str(r['strategy']))}</code></td>"
             f"<td class='num'>{r['total_pnl']:,.2f}</td>"
-            f"<td class='num'>{r['sharpe_252']:.4f}</td>"
+            f"<td class='num'>{r['ir_tick']:.5f}</td>"
+            f"<td class='num'>{r['block_sharpe_1k']:.3f}</td>"
             f"<td class='num'>{r['max_drawdown']:,.2f}</td>"
             f"<td class='num'>{r['total_fills']:,d}</td></tr>"
             for r in all_oos
@@ -159,34 +195,42 @@ class ResearchDashboard:
         gate_rows_html = "\n".join(
             f"<tr><td>R{escape(g.get('round', ''))}</td>"
             f"<td><code>{escape(g.get('plateau_params', ''))}</code></td>"
-            f"<td class='num'>{_to_float(g.get('is_sharpe_252')):.4f}</td>"
-            f"<td class='num'>{_to_float(g.get('local_mean')):.4f} "
-            f"&plusmn; {_to_float(g.get('local_std')):.4f}</td>"
+            f"<td class='num'>{_to_float(g.get('is_ir_tick')):.5f}</td>"
+            f"<td class='num'>{_to_float(g.get('local_mean')):.5f} "
+            f"&plusmn; {_to_float(g.get('local_std')):.5f}</td>"
+            f"<td class='num'>{escape(g.get('n_eff', ''))}</td>"
             f"<td class='num'>{_to_float(g.get('cscv_pbo')):.4f}</td>"
-            f"<td class='num'>{_to_float(g.get('dsr')):.4f}</td>"
+            f"<td class='num'>{_to_float(g.get('dsr_block')):.4f}</td>"
             f"<td class='num'>{_to_float(g.get('oos_pnl')):,.2f}</td>"
-            f"<td class='num'>{_to_float(g.get('oos_sharpe_252')):.4f}</td></tr>"
+            f"<td class='num'>{_to_float(g.get('oos_ir_tick')):.5f}</td></tr>"
             for g in gates
         )
 
-        mc_rows_html = "\n".join(
-            f"<tr><td>R1</td>"
-            f"<td><code>{escape(m.get('strategy', ''))}</code></td>"
-            f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
-            f"<td class='num'>{_to_float(m.get('mean_sharpe')):.4f}</td></tr>"
-            for m in mc_r1
-        ) + "\n" + "\n".join(
-            f"<tr><td>R{escape(m.get('round', ''))}</td>"
-            f"<td><code>{escape(m.get('scenario', ''))}</code></td>"
-            f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
-            f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
-            f"<td class='num'>{_to_float(m.get('mean_sharpe_252')):.4f}</td></tr>"
-            for m in mc_r2_r5
+        mc_rows_html = (
+            "\n".join(
+                f"<tr><td>R1</td>"
+                f"<td><code>{escape(m.get('strategy', ''))}</code></td>"
+                f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
+                f"<td class='num'>{_to_float(m.get('prob_loss_ci95_upper')):.4f}</td>"
+                f"<td class='num'>{_to_float(m.get('mean_sharpe')):.4f}</td></tr>"
+                for m in mc_r1
+            )
+            + "\n"
+            + "\n".join(
+                f"<tr><td>R{escape(m.get('round', ''))}</td>"
+                f"<td><code>{escape(m.get('scenario', ''))}</code></td>"
+                f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
+                f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
+                f"<td class='num'>{_to_float(m.get('prob_loss_ci95_upper')):.4f}</td>"
+                f"<td class='num'>"
+                f"{_to_float(m.get('mean_ir_tick') or m.get('mean_sharpe_252')):.4f}</td></tr>"
+                for m in mc_r2_r5
+            )
         )
 
         manual_rows_html = "\n".join(
@@ -203,6 +247,7 @@ class ResearchDashboard:
         figure_specs = [
             ("Round 1 Held-Out Day 0 Equity Comparison", "r1_oos_equity_comparison.png"),
             ("Rounds 2-5 Normalized OOS Equity Curves", "r2_to_r5_oos_equity_summary.png"),
+            ("Round 4 Counterparty Causal Decomposition", "r4_counterparty_markouts.png"),
             ("Round 5 Sensitivity Plateau & Category OOS", "r5_sensitivity_and_category_oos.png"),
             ("Manual Challenges Comparative Statics (R1-R5)", "manual_challenges_analysis.png"),
         ]
@@ -215,7 +260,7 @@ class ResearchDashboard:
                     figs_html_parts.append(
                         f"<figure class='chart-card'>"
                         f"<figcaption>{escape(caption)}</figcaption>"
-                        f"<img src='{uri}' alt='{escape(caption)}'/></figure>"
+                        f"<img src='{uri}' alt='{escape(caption)}'/></figure>",
                     )
         figs_html = "\n".join(figs_html_parts)
 
@@ -313,7 +358,7 @@ class ResearchDashboard:
     <div>
       <h1>IMC Prosperity 4 &mdash; Quantitative Research Portfolio Tearsheet</h1>
       <div class="subtitle">
-        Rounds 1&ndash;5 Algorithmic Market Making, Exotics, Statistical Arbitrage &amp; Manuals
+        Rounds 1&ndash;5 Algorithmic Market Making, Options, Flow &amp; Ex-Ante Manuals
       </div>
     </div>
     <span class="badge">Simulated Queue-Aware OOS &bull; Not Live Portal Scores</span>
@@ -321,19 +366,19 @@ class ResearchDashboard:
 
   <section class="kpi-grid">
     <div class="kpi">
-      <div class="label">Cumulative OOS Replay PnL (R1&ndash;R5)</div>
+      <div class="label">Simulated OOS Replay PnL (R1&ndash;R5)</div>
       <div class="val">+{total_qa_pnl:,.2f}</div>
-      <div class="note">Held-out day per round under queue_aware matching</div>
+      <div class="note">Phase 1: +{phase1_pnl:,.0f} &bull; Phase 2: +{phase2_pnl:,.0f}</div>
     </div>
     <div class="kpi">
-      <div class="label">Worst CSCV Probability of Overfit</div>
-      <div class="val">{max_pbo:.4f}</div>
-      <div class="note">R2&ndash;R5 gate pass (&lt; 0.15; R1 PBO = 0.086)</div>
+      <div class="label">Min In-Sample Block DSR</div>
+      <div class="val">{min_dsr:.4f}</div>
+      <div class="note">100-tick block DSR with correlated N_eff (&ge; 0.95 gate)</div>
     </div>
     <div class="kpi">
-      <div class="label">Submission MC Loss Probability</div>
-      <div class="val">{max_mc_prob_loss * 100:.1f}%</div>
-      <div class="note">Zero losing paths across calibrated synthetic sessions</div>
+      <div class="label">MC Loss Prob (Cal / Stress)</div>
+      <div class="val">{max_cal_loss * 100:.1f}% / {max_stress_loss * 100:.1f}%</div>
+      <div class="note">Peak empirical loss rate across calibrated vs adverse-stress MC</div>
     </div>
     <div class="kpi">
       <div class="label">Peak OOS Mean Tick Latency</div>
@@ -364,8 +409,10 @@ class ResearchDashboard:
           <tr>
             <th>Round</th><th>Strategy</th>
             <th style="text-align:right">OOS PnL</th>
-            <th style="text-align:right">Sharpe (252)</th>
+            <th style="text-align:right">IR_tick</th>
+            <th style="text-align:right">BlkSR_1k</th>
             <th style="text-align:right">Max DD</th>
+            <th style="text-align:right">PnL/MaxDD</th>
             <th style="text-align:right">Fills</th>
             <th style="text-align:right">Mean Latency</th>
           </tr>
@@ -387,7 +434,8 @@ class ResearchDashboard:
           <tr>
             <th>Round</th><th>Fill Mode</th><th>Strategy</th>
             <th style="text-align:right">OOS PnL</th>
-            <th style="text-align:right">Sharpe</th>
+            <th style="text-align:right">IR_tick</th>
+            <th style="text-align:right">BlkSR_1k</th>
             <th style="text-align:right">Max DD</th>
             <th style="text-align:right">Fills</th>
           </tr>
@@ -399,24 +447,25 @@ class ResearchDashboard:
 
   <div id="tab-gates" class="panel">
     <div class="card">
-      <h2>In-Sample Validation Gates &amp; CSCV / DSR Diagnostics (R2&ndash;R5)</h2>
+      <h2>In-Sample Validation Gates &amp; CSCV / Block-DSR Diagnostics (R1&ndash;R5)</h2>
       <table>
         <thead>
           <tr>
             <th>Round</th><th>Plateau Params</th>
-            <th style="text-align:right">IS Sharpe</th>
+            <th style="text-align:right">IS IR_tick</th>
             <th style="text-align:right">3x3 Local Mean &plusmn; Std</th>
+            <th style="text-align:right">N_eff</th>
             <th style="text-align:right">CSCV PBO</th>
-            <th style="text-align:right">DSR</th>
+            <th style="text-align:right">DSR_block</th>
             <th style="text-align:right">OOS PnL</th>
-            <th style="text-align:right">OOS Sharpe</th>
+            <th style="text-align:right">OOS IR_tick</th>
           </tr>
         </thead>
         <tbody>{gate_rows_html}</tbody>
       </table>
     </div>
     <div class="card">
-      <h2>Calibrated Monte Carlo Tail-Risk Benchmarks</h2>
+      <h2>Calibrated &amp; Stress-Tested Monte Carlo Tail-Risk Benchmarks (N=40 x 1k)</h2>
       <table>
         <thead>
           <tr>
@@ -425,7 +474,8 @@ class ResearchDashboard:
             <th style="text-align:right">VaR 95%</th>
             <th style="text-align:right">CVaR 95%</th>
             <th style="text-align:right">Prob Loss</th>
-            <th style="text-align:right">Mean Sharpe</th>
+            <th style="text-align:right">95% Wilson Up</th>
+            <th style="text-align:right">Mean IR_tick</th>
           </tr>
         </thead>
         <tbody>{mc_rows_html}</tbody>
@@ -435,11 +485,11 @@ class ResearchDashboard:
 
   <div id="tab-manual" class="panel">
     <div class="card">
-      <h2>Manual Challenge Mathematical Solutions &amp; Comparative Statics (R1&ndash;R5)</h2>
+      <h2>Manual Challenge Ex-Ante Mathematical Models &amp; Comparative Statics (R1&ndash;R5)</h2>
       <table>
         <thead>
           <tr>
-            <th>Round</th><th>Challenge</th><th>Scenario</th><th>Optimal Policy</th>
+            <th>Round</th><th>Challenge</th><th>Scenario</th><th>Model-Optimal Policy</th>
             <th style="text-align:right">Expected Outcome</th>
             <th>Modeling Assumptions</th>
           </tr>
@@ -450,11 +500,11 @@ class ResearchDashboard:
   </div>
 
   <div class="disclaimer">
-    <strong>Epistemic Disclosure:</strong> Market replay PnL, drawdowns, and Sharpe ratios above
+    <strong>Epistemic Disclosure:</strong> Market replay PnL, drawdowns, and unannualized IRs above
     reflect held-out chronological day replays on archived IMC Prosperity 4 historical order books
     under simulated <code>queue_aware</code> matching&mdash;never live competition leaderboard
-    placements. Manual challenge outcomes evaluate verified payoff formulas against explicitly
-    parameterized crowd beliefs.
+    placements. Manual challenge outcomes evaluate verified ex-ante payoff models under explicitly
+    stated beliefs and parameters.
   </div>
 </div>
 <script>

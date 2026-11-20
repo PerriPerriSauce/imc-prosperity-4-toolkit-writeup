@@ -13,9 +13,16 @@ class PerformanceMetrics:
     def calculate_sharpe_ratio(
         returns: Sequence[float],
         risk_free_rate: float = 0.0,
-        annualization_factor: float = 252.0,
+        annualization_factor: float = 1.0,
     ) -> float:
-        """Compute annualized Sharpe ratio from a series of periodic returns."""
+        """Compute Sharpe / information ratio scaled by sqrt(annualization_factor).
+
+        Defaults to `annualization_factor=1.0` (unscaled per-observation ratio) so
+        tick-level series are never mislabeled as 252-day annualized Sharpes.
+        """
+        if annualization_factor <= 0.0:
+            msg = f"annualization_factor must be strictly positive, got {annualization_factor}"
+            raise ValueError(msg)
         if len(returns) < 2:
             return 0.0
 
@@ -28,6 +35,31 @@ class PerformanceMetrics:
             return 0.0
 
         return (mean_return / std_dev) * math.sqrt(annualization_factor)
+
+    @staticmethod
+    def calculate_block_sharpe(returns: Sequence[float], block_size: int = 1000) -> float:
+        """Compute Sharpe ratio across disjoint non-overlapping return blocks."""
+        if block_size <= 0:
+            msg = f"block_size must be strictly positive, got {block_size}"
+            raise ValueError(msg)
+        n_blocks = len(returns) // block_size
+        if n_blocks < 2:
+            return 0.0
+        block_rets = [
+            float(sum(returns[i * block_size : (i + 1) * block_size]))
+            for i in range(n_blocks)
+        ]
+        mean_ret = sum(block_rets) / n_blocks
+        var = sum((r - mean_ret) ** 2 for r in block_rets) / (n_blocks - 1)
+        std = math.sqrt(var)
+        return (mean_ret / std) if std > 0.0 else 0.0
+
+    @staticmethod
+    def calculate_pnl_to_drawdown(total_pnl: float, max_drawdown: float) -> float:
+        """Compute finite intraday PnL-to-MaxDrawdown ratio (0.0 when MaxDD == 0)."""
+        if max_drawdown <= 0.0:
+            return 0.0
+        return float(total_pnl / max_drawdown)
 
     @staticmethod
     def calculate_max_drawdown(equity_curve: Sequence[float]) -> tuple[float, int]:
@@ -45,7 +77,7 @@ class PerformanceMetrics:
         max_duration = 0
 
         for val in equity_curve:
-            if val > peak:
+            if val >= peak:
                 peak = val
                 current_duration = 0
             else:

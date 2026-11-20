@@ -11,7 +11,7 @@ import numpy as np
 from prosperity_toolkit.backtesting.engine import BacktestEngine
 from prosperity_toolkit.backtesting.results import BacktestResult
 from prosperity_toolkit.core.models import Symbol
-from prosperity_toolkit.execution.simulator import ExecutionSimulator
+from prosperity_toolkit.execution.simulator import ExecutionSimulator, FillMode
 from prosperity_toolkit.market.market_state import MarketStateSnapshot
 from prosperity_toolkit.market.order_flow import TradePrint
 from prosperity_toolkit.simulation.processes import (
@@ -87,13 +87,22 @@ class MonteCarloEngine:
         assets: Sequence[AssetScenarioConfig],
         conservative_fills: bool = True,
         tick_step: int = 100,
+        fill_mode: FillMode | None = None,
+        adverse_selection_prob: float = 0.0,
+        adverse_jump_size: float = 4.0,
     ) -> None:
         if not assets:
             msg = "MonteCarloEngine requires at least one AssetScenarioConfig"
             raise ValueError(msg)
+        if not 0.0 <= adverse_selection_prob <= 1.0:
+            msg = f"adverse_selection_prob must be in [0, 1], got {adverse_selection_prob}"
+            raise ValueError(msg)
         self.assets = list(assets)
+        self.fill_mode: FillMode | None = fill_mode
         self.conservative_fills = conservative_fills
         self.tick_step = tick_step
+        self.adverse_selection_prob = adverse_selection_prob
+        self.adverse_jump_size = adverse_jump_size
 
     def run(
         self,
@@ -135,12 +144,23 @@ class MonteCarloEngine:
                 n_steps,
                 rng,
             )
+            if self.adverse_selection_prob > 0.0 and n_steps > 1:
+                arr = arrival_mats[asset.symbol]
+                informed_mask = (arr != 0) & (
+                    rng.random((n_sessions, n_steps)) < self.adverse_selection_prob
+                )
+                jumps = np.where(informed_mask, np.sign(arr) * self.adverse_jump_size, 0.0)
+                # Causal informed impact materializes on subsequent ticks (t+1 onward)
+                shifted_cum = np.zeros_like(fv_paths[asset.symbol])
+                shifted_cum[:, 1:] = np.cumsum(jumps[:, :-1], axis=1)
+                fv_paths[asset.symbol] = fv_paths[asset.symbol] + shifted_cum
             limits[asset.symbol] = asset.position_limit
 
         session_results: list[BacktestResult] = []
         simulator = ExecutionSimulator(
             position_limits=limits,
             conservative_fills=self.conservative_fills,
+            fill_mode=self.fill_mode,
         )
         engine = BacktestEngine(simulator=simulator)
 

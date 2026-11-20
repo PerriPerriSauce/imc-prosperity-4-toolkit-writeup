@@ -275,12 +275,12 @@ class DataIntegrityValidator:
             groups = [("ALL", df)]
 
         for product, group in groups:
-            sorted_ts = group["timestamp"].sort_values().drop_duplicates()
+            sorted_ts = group["timestamp"].sort_values(kind="mergesort")
             diffs = sorted_ts.diff().dropna()
             if not diffs.empty and not (diffs == expected_step).all():
                 bad = diffs[diffs != expected_step]
                 msg = (
-                    f"Timestamp discontinuity detected for product {product}: "
+                    f"Timestamp discontinuity or duplicate detected for product {product}: "
                     f"expected step {expected_step}, observed irregular diffs:\n{bad.head()}"
                 )
                 raise DataValidationError(msg)
@@ -295,7 +295,7 @@ class DataIntegrityValidator:
         """Run all integrity checks and produce a structured ValidationReport."""
         path = Path(filepath)
         parsed_type, round_num, day_num = parse_round_day_from_filename(path)
-        effective_type = parsed_type or dataset_type
+        effective_type = dataset_type or parsed_type or "trades"
         sha = compute_sha256(path)
         missing_counts = {str(col): int(df[col].isna().sum()) for col in df.columns}
         errors: list[str] = []

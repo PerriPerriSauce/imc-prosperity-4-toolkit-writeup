@@ -141,7 +141,7 @@ def test_synthetic_round2_to_round5_determinism_and_limits(
             books[sym] = OrderBookL2(
                 symbol=sym,
                 bids={mid - 2: 12, mid - 5: 30},
-                asks={mid + 2: 12, mid + 5: 30},
+                asks={mid + 2: -12, mid + 5: -30},
             )
         snapshots.append(MarketStateSnapshot(timestamp=ts, books=books))
 
@@ -159,3 +159,55 @@ def test_synthetic_round2_to_round5_determinism_and_limits(
     assert res_a.total_pnl == pytest.approx(res_b.total_pnl)
     assert len(res_a.fills) == len(res_b.fills)
     assert adapt_a.mean_latency_ms < max_latency_ms
+
+
+@pytest.mark.parametrize(
+    ("round_num", "kwargs"),
+    [
+        (2, {"min_edge": 2.5, "inventory_skew": 0.40}),
+        (3, {"spot_scale": 30.0, "enter_band": 10.0}),
+        (4, {"spot_scale": 30.0, "flow_weight": 1.5}),
+        (5, {"vol_skew_mult": 0.18, "edge_frac": 0.14, "mc_beta": 0.16}),
+    ],
+)
+def test_submissions_support_parameterized_init_and_respect_official_limits(
+    round_num: int,
+    kwargs: dict[str, float],
+) -> None:
+    """Parameterized constructors run cleanly and never emit orders breaching official limits."""
+    repo_root = Path(__file__).resolve().parents[2]
+    traders_dir = str(repo_root / "traders")
+    if traders_dir not in sys.path:
+        sys.path.insert(0, traders_dir)
+    sub_path = repo_root / "traders" / f"round{round_num}" / "submission.py"
+    spec = importlib.util.spec_from_file_location(f"round{round_num}_param_sub", sub_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    trader: CompetitionTraderProtocol = mod.Trader(**kwargs)
+    limits = get_round_position_limits(round_num)
+    books: dict[str, OrderBookL2] = {}
+    for sym in limits:
+        b = OrderBookL2(symbol=sym)
+        b.set_depth(bids={5200: 15, 5190: 25}, asks={5220: -15, 5230: -25})
+        books[sym] = b
+
+    adapter = CompetitionStrategyAdapter(trader, name=f"R{round_num}_Param")
+    state = MarketStateSnapshot(timestamp=100, books=books)
+    orders = adapter.generate_orders(state)
+
+    buys: dict[str, int] = {}
+    sells: dict[str, int] = {}
+    for order in orders:
+        assert order.price > 0
+        assert order.quantity != 0
+        if order.quantity > 0:
+            buys[order.symbol] = buys.get(order.symbol, 0) + order.quantity
+        else:
+            sells[order.symbol] = sells.get(order.symbol, 0) + abs(order.quantity)
+
+    for sym, lim in limits.items():
+        assert buys.get(sym, 0) <= lim
+        assert sells.get(sym, 0) <= lim
+

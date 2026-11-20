@@ -43,7 +43,7 @@ def test_round1_submission_deterministic_replay_and_latency() -> None:
     trades_df = DataLoader.load_trades_csv("tests/fixtures/trades_round_1_day_0_sample.csv")
     snapshots = build_snapshots_from_dataframes(prices_df, trades_df)
 
-    limits = {"ASH_COATED_OSMIUM": 20, "INTARIAN_PEPPER_ROOT": 20}
+    limits = {"ASH_COATED_OSMIUM": 80, "INTARIAN_PEPPER_ROOT": 80}
     sim_a = ExecutionSimulator(position_limits=limits, fill_mode="queue_aware")
     sim_b = ExecutionSimulator(position_limits=limits, fill_mode="queue_aware")
 

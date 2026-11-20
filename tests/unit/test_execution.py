@@ -126,3 +126,80 @@ def test_maker_matching_queue_aware(sample_order_book: OrderBookL2) -> None:
     )
     assert len(improve_fills) == 1
     assert improve_fills[0].quantity == 5
+
+
+def test_multi_level_taker_sell_sweep(sample_order_book: OrderBookL2) -> None:
+    """Aggressive sell crossing multiple bid levels fills descending and leaves remainder."""
+    # sample_order_book bids: {99: 10, 98: 20}
+    sim = ExecutionSimulator()
+    orders = [OrderRequest(symbol="TEST_ASSET", price=98, quantity=-35)]
+
+    fills, resting = sim.match_taker_with_remainder(0, sample_order_book, orders)
+
+    assert len(fills) == 2
+    assert fills[0].price == 99 and fills[0].quantity == -10
+    assert fills[1].price == 98 and fills[1].quantity == -20
+    assert fills[0].fill_type == FillType.TAKER
+
+    assert len(resting) == 1
+    assert resting[0].price == 98 and resting[0].quantity == -5
+
+
+def test_queue_aware_no_volume_double_counting(sample_order_book: OrderBookL2) -> None:
+    """Multiple resting orders at touch cannot reuse already-consumed queue-ahead volume."""
+    # sample_order_book has bids={99: 10, 98: 20} -> ahead at 99 is 10
+    qa_sim = ExecutionSimulator(fill_mode="queue_aware")
+    resting = [
+        OrderRequest(symbol="TEST_ASSET", price=99, quantity=2),
+        OrderRequest(symbol="TEST_ASSET", price=99, quantity=5),
+    ]
+    trade = [
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=99, quantity=13, buyer="", seller=""),
+    ]
+    fills = qa_sim.match_maker_orders(100, resting, trade, book=sample_order_book)
+
+    # Queue ahead consumes 10 of 13 -> only 3 remaining across BOTH resting orders (2 + 1)
+    assert sum(f.quantity for f in fills) == 3
+    assert [f.quantity for f in fills] == [2, 1]
+
+
+def test_maker_price_priority_before_time_order() -> None:
+    """Better-priced resting buy/sell listed second must fill before worse-priced order."""
+    sim = ExecutionSimulator(fill_mode="touch")
+    resting = [
+        OrderRequest(symbol="TEST_ASSET", price=98, quantity=5),
+        OrderRequest(symbol="TEST_ASSET", price=99, quantity=4),
+        OrderRequest(symbol="TEST_ASSET", price=102, quantity=-5),
+        OrderRequest(symbol="TEST_ASSET", price=101, quantity=-4),
+    ]
+    trades = [
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=98, quantity=4, buyer="", seller=""),
+        TradePrint(timestamp=100, symbol="TEST_ASSET", price=102, quantity=4, buyer="", seller=""),
+    ]
+    fills = sim.match_maker_orders(100, resting, trades)
+
+    assert len(fills) == 2
+    assert fills[0].price == 99 and fills[0].quantity == 4
+    assert fills[1].price == 101 and fills[1].quantity == -4
+
+
+def test_remaining_book_after_taker_depletes_touch(sample_order_book: OrderBookL2) -> None:
+    """Residual book after partial/full taker depletion updates queue ahead accurately."""
+    sim = ExecutionSimulator(fill_mode="queue_aware")
+    t_fills, _ = sim.match_taker_with_remainder(
+        100,
+        sample_order_book,
+        [OrderRequest(symbol="TEST_ASSET", price=101, quantity=6)],
+    )
+    residual = sim.remaining_book_after_taker(sample_order_book, t_fills)
+    assert residual.asks[101] == -4
+    assert residual.asks[102] == -25
+
+    # Full depletion removes the ask level cleanly
+    t_full, _ = sim.match_taker_with_remainder(
+        100,
+        sample_order_book,
+        [OrderRequest(symbol="TEST_ASSET", price=101, quantity=10)],
+    )
+    residual_full = sim.remaining_book_after_taker(sample_order_book, t_full)
+    assert 101 not in residual_full.asks

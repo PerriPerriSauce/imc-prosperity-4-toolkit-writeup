@@ -7,6 +7,7 @@ from prosperity_toolkit.simulation.joint_scenarios import (
     Round5JointConfig,
     Round5JointMonteCarloEngine,
     simulate_arrival_sensitivity,
+    wilson_ci_upper,
 )
 from prosperity_toolkit.simulation.processes import (
     OrnsteinUhlenbeckParams,
@@ -50,4 +51,5 @@ __all__ = [
     "simulate_ou_paths",
     "simulate_random_walk_paths",
     "simulate_trade_arrivals",
+    "wilson_ci_upper",
 ]

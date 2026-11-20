@@ -22,6 +22,7 @@ class PlateauSelection:
     local_mean: float
     local_std: float
     max_neighbor_drop: float
+    is_boundary: bool = False
 
 
 class SensitivityAnalyzer:
@@ -42,10 +43,13 @@ class SensitivityAnalyzer:
         y_values: Sequence[float],
         score_matrix: NDArray[np.float64],
         std_penalty: float = 1.0,
+        require_interior: bool = False,
     ) -> PlateauSelection:
         """Select parameters maximizing (local_mean - std_penalty * local_std) over 3x3 patches.
 
         Rejects isolated spikes (parameter cliffs) in favor of broad stable plateaus.
+        When `require_interior=True` and the grid is at least 3x3, restricts candidates
+        strictly to interior full 3x3 neighborhoods to prevent edge-clipping bias.
         """
         mat = np.asarray(score_matrix, dtype=np.float64)
         nx, ny = len(x_values), len(y_values)
@@ -53,9 +57,13 @@ class SensitivityAnalyzer:
             msg = f"score_matrix shape {mat.shape} does not match ({nx}, {ny})"
             raise ValueError(msg)
 
+        use_interior = require_interior and nx >= 3 and ny >= 3
+        i_indices = range(1, nx - 1) if use_interior else range(nx)
+        j_indices = range(1, ny - 1) if use_interior else range(ny)
+
         best: PlateauSelection | None = None
-        for i in range(nx):
-            for j in range(ny):
+        for i in i_indices:
+            for j in j_indices:
                 i_lo, i_hi = max(0, i - 1), min(nx, i + 2)
                 j_lo, j_hi = max(0, j - 1), min(ny, j + 2)
                 patch = mat[i_lo:i_hi, j_lo:j_hi]
@@ -70,6 +78,7 @@ class SensitivityAnalyzer:
                     if 0 <= ni < nx and 0 <= nj < ny:
                         neighbors.append(float(mat[ni, nj]))
                 max_drop = max((center - nb for nb in neighbors), default=0.0)
+                is_boundary = i == 0 or i == nx - 1 or j == 0 or j == ny - 1
 
                 candidate = PlateauSelection(
                     x_index=i,
@@ -81,6 +90,7 @@ class SensitivityAnalyzer:
                     local_mean=local_mean,
                     local_std=local_std,
                     max_neighbor_drop=max_drop,
+                    is_boundary=is_boundary,
                 )
                 if best is None or candidate.plateau_score > best.plateau_score:
                     best = candidate

@@ -133,12 +133,24 @@ class OverfittingDiagnostics:
         cls,
         selected_returns: Sequence[float] | NDArray[np.float64],
         all_trial_sharpes: Sequence[float],
+        n_trials_override: float | None = None,
     ) -> DSRResult:
-        """Evaluate DSR for a selected strategy given all N tested trial Sharpes."""
+        """Evaluate DSR for a selected strategy given tested trial Sharpes.
+
+        Args:
+            selected_returns: Return series for the chosen strategy.
+            all_trial_sharpes: Unscaled Sharpe ratios on the same sampling horizon.
+            n_trials_override: Optional effective independent trial count (`N_eff`).
+        """
         ret = np.asarray(selected_returns, dtype=np.float64)
         obs_sr = _compute_sharpe(ret)
-        n_trials = len(all_trial_sharpes)
-        sr_var = float(np.var(all_trial_sharpes, ddof=1)) if n_trials > 1 else 0.0
+        raw_n = len(all_trial_sharpes)
+        sr_var = float(np.var(all_trial_sharpes, ddof=1)) if raw_n > 1 else 0.0
+        eff_n = (
+            max(1, round(n_trials_override))
+            if n_trials_override is not None
+            else max(1, raw_n)
+        )
         skew = float(stats.skew(ret)) if ret.size > 2 and np.std(ret) > 0 else 0.0
         ex_kurt = (
             float(stats.kurtosis(ret, fisher=True))
@@ -148,12 +160,45 @@ class OverfittingDiagnostics:
 
         return cls.deflated_sharpe_ratio(
             observed_sr=obs_sr,
-            n_trials=max(1, n_trials),
+            n_trials=eff_n,
             sr_variance=sr_var,
             n_obs=int(ret.size),
             skewness=skew,
             excess_kurtosis=ex_kurt,
         )
+
+    @classmethod
+    def evaluate_block_matrix_dsr(
+        cls,
+        trial_returns_matrix: NDArray[np.float64],
+        selected_col_idx: int,
+        block_size: int = 100,
+    ) -> tuple[DSRResult, float]:
+        """Compute N_eff-adjusted DSR after aggregating returns into disjoint blocks.
+
+        Aggregating correlated tick returns into non-overlapping blocks mitigates
+        N_obs inflation under serial dependence while keeping observed Sharpe,
+        cross-trial Sharpe variance, and N_eff on the exact same time horizon.
+        """
+        mat = np.asarray(trial_returns_matrix, dtype=np.float64)
+        if mat.ndim != 2 or mat.shape[0] < 2:
+            msg = "trial_returns_matrix must have shape (T >= 2, N)"
+            raise ValueError(msg)
+        eff_block = max(1, min(block_size, mat.shape[0] // 2))
+        n_blocks = mat.shape[0] // eff_block
+        block_mat = (
+            mat[: n_blocks * eff_block, :]
+            .reshape(n_blocks, eff_block, mat.shape[1])
+            .sum(axis=1)
+        )
+        trial_srs = [_compute_sharpe(block_mat[:, j]) for j in range(block_mat.shape[1])]
+        n_eff = cls.estimate_effective_trials(block_mat)
+        dsr = cls.evaluate_trial_dsr(
+            selected_returns=block_mat[:, selected_col_idx],
+            all_trial_sharpes=trial_srs,
+            n_trials_override=n_eff,
+        )
+        return dsr, n_eff
 
     @staticmethod
     def compute_cscv_pbo(
@@ -235,13 +280,19 @@ class OverfittingDiagnostics:
     def estimate_effective_trials(trial_returns_matrix: NDArray[np.float64]) -> float:
         """Compute effective independent trial count N_eff via correlation eigenvalue ratio.
 
-        N_eff = (sum lambda_k)^2 / sum(lambda_k^2) in [1, N].
+        N_eff = (sum lambda_k)^2 / sum(lambda_k^2) in [1, N]. Filters degenerate
+        zero-variance trials so constant-return columns do not zero out matrix diagonals.
         """
         mat = np.asarray(trial_returns_matrix, dtype=np.float64)
         if mat.ndim != 2 or mat.shape[1] < 2:
             return float(mat.shape[1]) if mat.ndim == 2 else 1.0
-        corr = np.corrcoef(mat, rowvar=False)
+        stds = np.std(mat, axis=0, ddof=1)
+        valid = stds > 1e-12
+        if int(np.sum(valid)) < 2:
+            return 1.0
+        corr = np.asarray(np.corrcoef(mat[:, valid], rowvar=False), dtype=np.float64)
         corr = np.nan_to_num(corr, nan=0.0)
+        np.fill_diagonal(corr, 1.0)
         eigvals = np.linalg.eigvalsh(corr)
         eigvals = np.maximum(eigvals, 0.0)
         denom = float(np.sum(eigvals**2))
@@ -256,12 +307,16 @@ class OverfittingDiagnostics:
         n_bootstraps: int = 500,
         alpha: float = 0.05,
         seed: int = 42,
+        scale_factor: float = 1.0,
     ) -> BootstrapCIResult:
         """Circular block-bootstrap CI preserving short-horizon serial dependence."""
         ret = np.asarray(returns, dtype=np.float64)
         n = ret.size
-        if n < 2 or block_size <= 0 or n_bootstraps <= 0:
-            msg = "Need valid return series (len >= 2), block_size > 0, and n_bootstraps > 0"
+        if n < 2 or block_size <= 0 or n_bootstraps <= 0 or scale_factor <= 0.0:
+            msg = (
+                "Need valid return series (len >= 2), block_size > 0, "
+                "n_bootstraps > 0, and scale_factor > 0"
+            )
             raise ValueError(msg)
 
         eff_block = min(block_size, n)
@@ -270,6 +325,7 @@ class OverfittingDiagnostics:
 
         boot_sharpes = np.empty(n_bootstraps, dtype=np.float64)
         boot_pnls = np.empty(n_bootstraps, dtype=np.float64)
+        sqrt_scale = math.sqrt(scale_factor)
 
         for b_idx in range(n_bootstraps):
             starts = rng.integers(0, n, size=n_blocks)
@@ -278,7 +334,7 @@ class OverfittingDiagnostics:
             sample = ret[indices]
             std = float(np.std(sample, ddof=1))
             boot_sharpes[b_idx] = (
-                (float(np.mean(sample)) / std) * math.sqrt(252.0) if std > 0 else 0.0
+                (float(np.mean(sample)) / std) * sqrt_scale if std > 0 else 0.0
             )
             boot_pnls[b_idx] = float(np.sum(sample))
 

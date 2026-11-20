@@ -37,3 +37,22 @@ def test_missing_trader_class_rejected(tmp_path: Path) -> None:
     sub_file.write_text("def run(state):\n    return {}, 0, ''\n", encoding="utf-8")
     errors = SubmissionValidator.validate_file(sub_file)
     assert any("Trader" in err for err in errors)
+
+
+def test_disallowed_third_party_or_system_imports_rejected(tmp_path: Path) -> None:
+    """Allowlist validator must block pandas, scipy, requests, subprocess, and relative imports."""
+    for stmt in (
+        "import pandas as pd",
+        "from scipy import stats",
+        "import requests",
+        "import os",
+        "import subprocess",
+        "from .helper import x",
+    ):
+        sub_file = tmp_path / "disallowed.py"
+        sub_file.write_text(
+            f"{stmt}\nclass Trader:\n    def run(self, state):\n        return {{}}, 0, ''\n",
+            encoding="utf-8",
+        )
+        errors = SubmissionValidator.validate_file(sub_file)
+        assert errors, f"Expected allowlist rejection for: {stmt}"

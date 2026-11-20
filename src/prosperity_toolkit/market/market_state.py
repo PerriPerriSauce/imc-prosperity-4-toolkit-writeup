@@ -1,4 +1,4 @@
-"""Immutable state snapshot representation across all traded instruments."""
+"""Read-only state snapshot representation across all traded instruments."""
 
 from __future__ import annotations
 
@@ -11,12 +11,13 @@ from prosperity_toolkit.market.order_flow import TradePrint
 
 @dataclass
 class MarketStateSnapshot:
-    """Internal consolidated state snapshot at timestamp t."""
+    """Consolidated market state snapshot delivered to a strategy at timestamp t."""
 
     timestamp: Timestamp
     books: dict[Symbol, OrderBookL2] = field(default_factory=dict)
     positions: dict[Symbol, Position] = field(default_factory=dict)
     market_trades: dict[Symbol, list[TradePrint]] = field(default_factory=dict)
+    own_trades: dict[Symbol, list[TradePrint]] = field(default_factory=dict)
     trader_data: str = ""
 
     def get_position(self, symbol: Symbol) -> Position:

@@ -1,41 +1,36 @@
-# Quantitative Research: Cointegration, Basket Invariants & Execution Horizon
+# Quantitative Research: Cointegration, Basket Invariants & Predictive Lead-Lag
 
-Cross-asset strategies only earn durable edge in short historical samples when statistical co-movement reflects a structural accounting constraint rather than transient sample correlation. This note documents how PCA eigendecomposition distinguishes genuine cointegration from unstable factor exposure in Round 5, and why execution horizon must match the half-life of the spread.
+Cross-asset signals only justify strategy complexity when statistical invariants survive transaction costs (bid-ask spreads) and structural eigenvectors remain stable out-of-sample. This note contrasts three structures tested in Round 5 (`IS Days 2–3`, `OOS Day 4`) and explains why **`Pebbles` arbitrage and `Snackpack` triplets were rejected** in favor of discrete **`MICROCHIP_CIRCLE` causal lead-lag**.
 
 ## 1. Multivariate Cointegration & PCA Condition Ratios
 
-Let $P_t = (P_{1, t}, \dots, P_{K, t})^\top$ denote the contemporaneous two-sided mid-price vector of $K$ related instruments. Even when each individual leg follows a unit-root random walk $I(1)$, a linear combination $z_t = \mathbf{w}^\top P_t$ can be stationary $I(0)$ when an underlying synthetic pricing rule constrains the basket sum or relative level.
-
-In [`cross_asset.py`](../../src/prosperity_toolkit/analysis/cross_asset.py), `fit_cointegrating_basket` decomposes the sample level covariance matrix $\hat{\Sigma}_P = V \Lambda V^\top$ with eigenvalues $\lambda_1 \ge \lambda_2 \ge \dots \ge \lambda_K \ge 0$:
+Let $P_t = (P_{1, t}, \dots, P_{K, t})^\top$ denote contemporaneous two-sided mid-prices. In [`cross_asset.py`](../../src/prosperity_toolkit/analysis/cross_asset.py), `fit_cointegrating_basket` decomposes level covariance $\hat{\Sigma}_P = V \Lambda V^\top$:
 $$\mathbf{w}^* = \arg\min_{\|\mathbf{w}\|_2 = 1} \mathbf{w}^\top \hat{\Sigma}_P \mathbf{w} = \mathbf{v}_K, \qquad \kappa = \frac{\lambda_1}{\lambda_K}$$
-In practice, we treat two empirical thresholds as non-negotiable prior to trading any multi-leg spread:
-1. A sharp **spectral condition ratio** ($\kappa \gg 10^2$) alongside weight stability across calendar days (no rotation in $\mathbf{v}_K$).
-2. Significant **Augmented Dickey-Fuller rejection** ($t < -2.863$ at 5%) on $z_t$ with a clear discrete AR(1) reversion rate $\theta = 1 - \hat{\phi}_1$ and half-life $\tau_{1/2} = -\ln 2 / \ln \hat{\phi}_1$.
+Every candidate structure faces two gates before production allocation: (1) stable eigenvector weights across IS days, and (2) residual dispersion sufficiently wider than combined multi-leg execution spreads.
 
-## 2. Empirical Structures in Round 5 (`r5_baskets_summary.csv`)
+## 2. Empirical Structures in Round 5 (`r5_baskets_summary.csv`, `r5_microchips_leadlag.csv`)
 
-Testing all ten Round 5 categories strictly on In-Sample (`Day 2` & `Day 3`) before held-out OOS (`Day 4`) reveals eight decoupled random-walk clusters (`max |r| <= 0.0294`) and **two** co-moving groups whose stability differs fundamentally ([`r5_baskets_summary.csv`](../../reports/tables/r5_baskets_summary.csv)):
-
-| Basket / Pair Structure | Split | Sum Mean | Residual Std | `ADF t` | Half-Life | Empirical Regime Diagnosis |
+| Structure | Split | Mean | Residual Std | `ADF t` | Half-Life | Research Disposition |
 | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`Pebbles` (`XS+S+M+L+XL`)** | IS `Day 2` / `3` | `49,999.91` / `.97` | `2.82` / `2.76` | `-71.14` / `-71.24` | `0.18` / `0.12` t | **Exact structural invariant** (`50,000`, $\kappa > 1.66 \times 10^6$) |
-| **`Pebbles` (`XS+S+M+L+XL`)** | **OOS `Day 4`** | **`49,999.94`** | **`2.82`** | **`-70.16`** | **`0.16` t** | Identical uniform weights $[1,1,1,1,1]/\sqrt{5}$ |
-| **`Snackpack Choc + Van`** | IS `Day 2` / `3` | `20,025.04` / `19,926.89` | `42.48` / `31.60` | `-2.04` / `-2.80` | `375` / `197` t | Shifting daily equilibrium (`-98.2` step shift across days) |
-| **`Snackpack Choc + Van`** | **OOS `Day 4`** | **`19,870.09`** | `48.22` | `-1.17` | `527` t | High diff corr (`r = -0.912`); requires slow rolling `K_day` |
-| **`Snackpack Pis/Straw/Rasp`** | IS `Day 2` | `16,746.18` | `55.33` | `-1.24` | `806` t | Factor weights `[0.493, 0.418, 0.763]` |
-| **`Snackpack Pis/Straw/Rasp`** | **OOS `Day 4`** | `14,929.18` | `44.06` | `-2.47` | `383` t | **Rejected**: eigenvector rotated to `[0.776, 0.135, 0.616]` |
+| **`Pebbles` (`XS+S+M+L+XL`)** | IS `Day 2` / `3` | `49,999.91` / `.97` | `2.816` / `2.758` | `-71.14` / `-71.24` | `0.18` / `0.12` t | **Pruned**: std (`2.82`) sits completely inside `12–14` tick 5-leg touch spreads |
+| **`Pebbles` (`XS+S+M+L+XL`)** | OOS `Day 4` | `49,999.94` | `2.821` | `-70.16` | `0.16` t | Confirmed book-sum invariant (`49,981.5..50,016.0`), zero crossing alpha |
+| **`Snackpack Choc + Van`** | IS `Day 2` / `3` | `20,025.04` / `19,926.89` | `42.48` / `31.60` | `-2.04` / `-2.80` | `375` / `197` t | **Pruned**: daily equilibrium shifts `-98.2` ticks across days |
+| **`Snackpack Choc + Van`** | OOS `Day 4` | `19,870.09` | `48.22` | `-1.17` | `527` t | High diff corr (`-0.912`) is contemporaneous, non-predictive |
+| **`Snackpack Pis/Straw/Rasp`** | IS `Day 2` / OOS `Day 4` | `16,746` / `14,929` | `55.33` / `44.06` | `-1.24` / `-2.47` | `806` / `383` t | **Rejected**: eigenvector rotated `[0.493, 0.418, 0.763] -> [0.776, 0.135, 0.616]` |
+| **`MICROCHIP_CIRCLE` Lead-Lag** | IS `Day 2–3` | `beta = 0.078–0.130` | Discrete lags | — | `50 / 100 / 150 / 200` t | **Promoted**: exact causal lag `OVAL (50), SQUARE (100), RECT (150), TRI (200)` |
 
-### Why `Snackpack Pis/Straw/Rasp` Fails Out-of-Sample Inclusion
-Even though `SNACKPACK_PISTACHIO`, `STRAWBERRY`, and `RASPBERRY` exhibit `0.927` IS (`0.918` OOS) pairwise tick-difference correlation, their minimum-variance eigenvector changes sharply from `[0.493, 0.418, 0.763]` on `Day 2` to `[0.776, 0.135, 0.616]` on `Day 4`. Hardcoding a 3-leg hedge ratio off two days of prices is fragile cointegration overfitting; excluding that triplet from [`traders/round5/submission.py`](../../traders/round5/submission.py) protects capital without losing true spread capture.
+### Why `Pebbles` Arbitrage Fails Execution Verification
+Although `PEBBLES_XS + S + M + L + XL` satisfies $\sum P_i = 50{,}000 \pm 2.82$ (`ADF t = -70.16`, `0.16`-tick half-life), a `2.82`-tick basket standard deviation rarely clears the combined half-spreads across `12–14` tick markets (`min=49,981.5, max=50,016.0` represents single-side ask-wall noise rather than sweepable edge). Resting passive quotes biased toward implied values suffered adverse fills after snapback, while strict IOC cross-taking produced zero net fills—so `traders/round5/submission.py` cleanly prunes `Pebbles` cross-trading (`OOS +350.0` pure MM vs wasted complexity).
 
-### Why `Pebbles` Requires Atomic IOC Execution Rather Than Passive Fair-Value Shifting
-In our initial Round 5 passive implementation, shifting passive resting quotes on `PEBBLES_*` toward $\hat{P}_i = 50{,}000 - \sum_{j \ne i} \text{wall\_mid}_j$ degraded performance compared to ignoring the sum invariant altogether (`PM-005`). Why? With an empirical AR(1) half-life of `0.16` ticks (`88%` decay per simulation step!), any `±15`-tick discrepancy observed at timestamp $t$ comes from transient resting depth jitter on one leg that snaps back **before** a passive quote submitted for timestamp $t + 100$ can collect flow—leaving only skewed resting orders that adverse-select against genuine synchronized pulse moves.
+### Why `MICROCHIP_CIRCLE` Discrete Lead-Lag Works Out-of-Sample
+Strictly on IS Days `2–3` ([`r5_microchips_leadlag.csv`](../../reports/tables/r5_microchips_leadlag.csv)), differenced `MICROCHIP_CIRCLE` returns predict downstream follower moves at exact discrete lags while neighboring lags (`±1` tick) stay near zero:
+- `MICROCHIP_OVAL` (`lag = 50`): `r_d2 = 0.0494`, `r_d3 = 0.0533`, pooled $\hat{\beta} = 0.0781$.
+- `MICROCHIP_SQUARE` (`lag = 100`): `r_d2 = 0.0450`, `r_d3 = 0.0723`, pooled $\hat{\beta} = 0.1296$.
+- `MICROCHIP_RECTANGLE` (`lag = 150`): `r_d2 = 0.0553`, `r_d3 = 0.0682`, pooled $\hat{\beta} = 0.0907$.
+- `MICROCHIP_TRIANGLE` (`lag = 200`): `r_d2 = 0.0470`, `r_d3 = 0.0750`, pooled $\hat{\beta} = 0.1025$.
 
-Decoupling the two horizons resolves the tension cleanly in [`traders/round5/submission.py`](../../traders/round5/submission.py): passive MM quotes stay anchored on each leg's unbiased `wall_mid`, while an independent **atomic cross-taking rule** lifts asks (`best_ask <= peb_imp - TAKE_EDGE - PEBBLES_TAKE_BUFFER`) and hits bids immediately whenever `peb_full` confirms an instantaneous multi-leg discount (`> 3` ticks).
+Applying a single common multiplier `mc_beta = 0.16` in `traders/round5/submission.py` improves OOS PnL by **`+2,215.50`** (`+97,628.00` vs `+95,412.50` for `Round5NoLeadLag`, nearly doubling `Microchips` category PnL) while cutting `MaxDD` from `15,692.50` to `14,961.50`.
 
 ## 3. Spatial / Conversion Arbitrage Schema Readiness
 
-Although [`datamodel.py`](../../traders/datamodel.py) and `prosperity_toolkit.data.schemas` implement full `ConversionObservation` support (`bidPrice`, `askPrice`, `transportFees`, `exportTariff`, `importTariff`, `sugarPrice`, `sunlightIndex`):
-$$\Pi_{\text{import}} = P_{\text{local bid}} - (P_{\text{foreign ask}} + c_{\text{trans}} + \tau_{\text{imp}}), \qquad \Pi_{\text{export}} = (P_{\text{foreign bid}} - c_{\text{trans}} - \tau_{\text{exp}}) - P_{\text{local ask}}$$
-auditing all `34` historical CSVs verifies **zero `observations_round_*.csv` feeds in Prosperity 4 Rounds 0–5**. The toolkit retains full conversion-arbitrage parity math at the unit-test level while focusing live submission capital on observed domestic book invariants.
-
+Although [`datamodel.py`](../../traders/datamodel.py) and `prosperity_toolkit.data.schemas` implement full `ConversionObservation` support, auditing all `34` historical CSVs verifies zero `observations_round_*.csv` feeds in Prosperity 4 Rounds 0–5.

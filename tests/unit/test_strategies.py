@@ -10,6 +10,9 @@ from prosperity_toolkit.strategies import (
     DriftAwareQuoter,
     InventorySkewedMarketMaker,
     MarketMakingConfig,
+    OptionStrikeSpec,
+    OptionsVolatilityConfig,
+    OptionsVolatilityStrategy,
     OUMeanReversionConfig,
     OUMeanReversionStrategy,
     SymmetricMarketMaker,
@@ -82,3 +85,49 @@ def test_ou_mean_reversion_triggers_at_z_threshold() -> None:
     assert len(orders) == 1
     assert orders[0].price == 9994
     assert orders[0].quantity == 2
+
+
+def test_bachelier_options_strategy_uses_spot_take_edge() -> None:
+    """Bachelier pricing and spot_take_edge should gate spot sweeps properly."""
+    cfg = OptionsVolatilityConfig(
+        spot_symbol="SPOT",
+        spot_limit=50,
+        pricing_model="bachelier",
+        base_vol=1.5,
+        spot_take_edge=3.0,
+        hedge_band=100.0,
+        strikes=(
+            OptionStrikeSpec("OPT_5200", 5200.0, position_limit=100, take_edge=2.0),
+            OptionStrikeSpec("OPT_5300", 5300.0, position_limit=100, take_edge=2.0),
+        ),
+    )
+    strat = OptionsVolatilityStrategy(cfg)
+
+    spot_book = OrderBookL2(symbol="SPOT")
+    spot_book.set_depth(bids={5240: 5, 5230: 50}, asks={5260: -5, 5270: -50})
+    opt1 = OrderBookL2(symbol="OPT_5200")
+    opt1.set_depth(bids={60: 20}, asks={66: -20})
+    opt2 = OrderBookL2(symbol="OPT_5300")
+    opt2.set_depth(bids={8: 20}, asks={14: -20})
+
+    # Warm EMA on fair snapshot
+    snap0 = MarketStateSnapshot(
+        timestamp=0,
+        books={"SPOT": spot_book, "OPT_5200": opt1, "OPT_5300": opt2},
+    )
+    orders0 = strat.generate_orders(snap0)
+    assert all(isinstance(o.quantity, int) and o.quantity != 0 for o in orders0)
+
+    # Dislocation inside spot_take_edge=3.0 (ask=5248 vs fv~5250, gap=2 < 3) must not sweep
+    spot_cheap = OrderBookL2(symbol="SPOT")
+    spot_cheap.set_depth(bids={5240: 20}, asks={5248: -5, 5260: -20})
+    snap1 = MarketStateSnapshot(
+        timestamp=100,
+        books={"SPOT": spot_cheap, "OPT_5200": opt1, "OPT_5300": opt2},
+    )
+    orders1 = strat.generate_orders(snap1)
+    spot_buys_crossing_5248 = [
+        o for o in orders1 if o.symbol == "SPOT" and o.quantity > 0 and o.price >= 5248
+    ]
+    assert not spot_buys_crossing_5248
+

@@ -408,6 +408,16 @@ def _bs_price(spot: float, strike: float, tte_years: float, vol_ann: float, is_c
     return float(strike * _STD_NORM.cdf(-d2) - spot * _STD_NORM.cdf(-d1))
 
 
+def _bs_delta(spot: float, strike: float, tte_years: float, vol_ann: float, is_call: bool) -> float:
+    if tte_years <= 0.0 or vol_ann <= 0.0:
+        if is_call:
+            return 1.0 if spot > strike else 0.0
+        return -1.0 if spot < strike else 0.0
+    st = math.sqrt(tte_years)
+    d1 = (math.log(spot / strike) + 0.5 * vol_ann * vol_ann * tte_years) / (vol_ann * st)
+    return float(_STD_NORM.cdf(d1)) if is_call else float(_STD_NORM.cdf(d1) - 1.0)
+
+
 def price_aether_crystal_contract(
     spec: ExoticContractSpec,
     spot: float = 50.0,
@@ -416,10 +426,11 @@ def price_aether_crystal_contract(
     seed: int = 42,
     days_per_year: float = 252.0,
 ) -> ExoticValuationResult:
-    """Price AETHER_CRYSTAL spot, vanilla, binary, knock-out, or chooser via antithetic GBM.
+    """Price AETHER_CRYSTAL spot, vanilla, binary, chooser (exact BS/Rubinstein), or barrier KO.
 
-    By default `step_sigma_log` is the discrete per-step log-volatility (matching
-    `sigma = 0.0251` per 6h step / `sqrt(4*252)` scaling), and can be supplied explicitly.
+    Closed-form Black-Scholes and Rubinstein (1991) formulas are used for path-independent
+    vanillas, digital puts, and simple choosers (eliminating MC put-call parity noise).
+    Path-dependent discrete-monitoring knock-out puts use antithetic GBM Monte Carlo.
     """
     if spec.kind == "spot":
         return ExoticValuationResult(
@@ -430,65 +441,81 @@ def price_aether_crystal_contract(
             delta_fd=1.0,
         )
 
-    n_half = max(1000, n_paths // 2)
     total_steps = max(1, int(round(spec.horizon_days * spec.steps_per_day)))
     choice_step = min(
         total_steps,
         max(1, int(round(spec.choice_day * spec.steps_per_day))),
     )
+    ann_vol = step_sigma_log * math.sqrt(spec.steps_per_day * days_per_year)
+    total_years = total_steps / (spec.steps_per_day * days_per_year)
+    choice_years = choice_step / (spec.steps_per_day * days_per_year)
 
+    if spec.kind == "vanilla_call":
+        fair = _bs_price(spot, spec.strike, total_years, ann_vol, is_call=True)
+        delta = _bs_delta(spot, spec.strike, total_years, ann_vol, is_call=True)
+        return ExoticValuationResult(spec.name, fair, 0.0, 0.0, delta)
+
+    if spec.kind == "vanilla_put":
+        fair = _bs_price(spot, spec.strike, total_years, ann_vol, is_call=False)
+        delta = _bs_delta(spot, spec.strike, total_years, ann_vol, is_call=False)
+        return ExoticValuationResult(spec.name, fair, 0.0, 0.0, delta)
+
+    if spec.kind == "binary_put":
+        st = math.sqrt(total_years)
+        d2 = (math.log(spot / spec.strike) - 0.5 * ann_vol * ann_vol * total_years) / (
+            ann_vol * st
+        )
+        fair = float(spec.binary_payout * _STD_NORM.cdf(-d2))
+        delta = float(-spec.binary_payout * _STD_NORM.pdf(-d2) / (spot * ann_vol * st))
+        return ExoticValuationResult(spec.name, fair, 0.0, 0.0, delta)
+
+    if spec.kind == "chooser":
+        # Rubinstein (1991) exact zero-rate simple chooser: C(S, K, T) + P(S, K, t_c)
+        fair = _bs_price(spot, spec.strike, total_years, ann_vol, is_call=True) + _bs_price(
+            spot,
+            spec.strike,
+            choice_years,
+            ann_vol,
+            is_call=False,
+        )
+        delta = _bs_delta(spot, spec.strike, total_years, ann_vol, is_call=True) + _bs_delta(
+            spot,
+            spec.strike,
+            choice_years,
+            ann_vol,
+            is_call=False,
+        )
+        return ExoticValuationResult(spec.name, fair, 0.0, 0.0, delta)
+
+    if spec.kind != "knockout_put":
+        msg = f"Unsupported exotic contract kind: {spec.kind}"
+        raise ValueError(msg)
+
+    n_half = max(1000, n_paths // 2)
     rng = np.random.default_rng(seed)
     z_half = rng.standard_normal((n_half, total_steps))
     z = np.vstack([z_half, -z_half])
 
     # Martingale-consistent risk-neutral GBM steps: E[S_{t+1} | S_t] = S_t
     drift_step = -0.5 * step_sigma_log * step_sigma_log
-    ann_vol = step_sigma_log * math.sqrt(spec.steps_per_day * days_per_year)
 
-    def _simulate_payoffs(s0: float) -> tuple[NDArray[np.float64], float]:
+    def _simulate_ko(s0: float) -> tuple[NDArray[np.float64], float]:
         log_rets = drift_step + step_sigma_log * z
         paths = s0 * np.exp(np.cumsum(log_rets, axis=1))
         s_T = paths[:, -1]
-        ko_prob = 0.0
-
-        if spec.kind == "vanilla_call":
-            pay = np.maximum(s_T - spec.strike, 0.0)
-        elif spec.kind == "vanilla_put":
-            pay = np.maximum(spec.strike - s_T, 0.0)
-        elif spec.kind == "binary_put":
-            pay = np.where(s_T < spec.strike, spec.binary_payout, 0.0)
-        elif spec.kind == "knockout_put":
-            # Down-and-out knock-out monitoring at discrete steps
-            min_path = np.min(paths, axis=1)
-            knocked = (min_path <= spec.barrier) | (s0 <= spec.barrier)
-            ko_prob = float(np.mean(knocked))
-            pay = np.where(knocked, 0.0, np.maximum(spec.strike - s_T, 0.0))
-        elif spec.kind == "chooser":
-            s_choice = paths[:, choice_step - 1]
-            rem_years = max(0.0, (total_steps - choice_step) / (spec.steps_per_day * days_per_year))
-            pay = np.array(
-                [
-                    max(
-                        _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=True),
-                        _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=False),
-                    )
-                    for sc in s_choice
-                ],
-                dtype=np.float64,
-            )
-        else:
-            msg = f"Unsupported exotic contract kind: {spec.kind}"
-            raise ValueError(msg)
-
+        min_path = np.min(paths, axis=1)
+        knocked = (min_path <= spec.barrier) | (s0 <= spec.barrier)
+        ko_prob = float(np.mean(knocked))
+        pay = np.where(knocked, 0.0, np.maximum(spec.strike - s_T, 0.0))
         return pay, ko_prob
 
-    payoffs, ko_p = _simulate_payoffs(spot)
+    payoffs, ko_p = _simulate_ko(spot)
     fair = float(np.mean(payoffs))
     se = float(np.std(payoffs, ddof=1) / math.sqrt(payoffs.size))
 
     eps = max(0.05, 0.005 * spot)
-    up_pay, _ = _simulate_payoffs(spot + eps)
-    dn_pay, _ = _simulate_payoffs(max(1e-4, spot - eps))
+    up_pay, _ = _simulate_ko(spot + eps)
+    dn_pay, _ = _simulate_ko(max(1e-4, spot - eps))
     delta = float((np.mean(up_pay) - np.mean(dn_pay)) / (2.0 * eps))
 
     return ExoticValuationResult(
@@ -821,20 +848,26 @@ def _pathwise_payoffs(
         knocked = (np.min(paths, axis=1) <= spec.barrier) | (spot <= spec.barrier)
         return np.where(knocked, 0.0, np.maximum(spec.strike - s_t, 0.0))
     if spec.kind == "chooser":
+        # Realized terminal Day-T payoff after optimal call/put election at choice_day
+        # Under r=0 symmetric lognormal diffusion, C(S_c, K, T-t_c) >= P(S_c, K, T-t_c) iff S_c >= K
         c_step = min(total_steps, max(1, int(round(spec.choice_day * spec.steps_per_day))))
         s_choice = paths[:, c_step - 1]
         ann_vol = step_sigma_log * math.sqrt(spec.steps_per_day * days_per_year)
         rem_years = max(0.0, (total_steps - c_step) / (spec.steps_per_day * days_per_year))
-        return np.array(
-            [
-                max(
-                    _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=True),
-                    _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=False),
-                )
-                for sc in s_choice
-            ],
-            dtype=np.float64,
-        )
+        if rem_years <= 0.0:
+            choose_call = s_choice >= spec.strike
+        else:
+            choose_call = np.array(
+                [
+                    _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=True)
+                    >= _bs_price(float(sc), spec.strike, rem_years, ann_vol, is_call=False)
+                    for sc in s_choice
+                ],
+                dtype=bool,
+            )
+        call_pay = np.maximum(s_t - spec.strike, 0.0)
+        put_pay = np.maximum(spec.strike - s_t, 0.0)
+        return np.where(choose_call, call_pay, put_pay)
     msg = f"Unsupported exotic contract kind: {spec.kind}"
     raise ValueError(msg)
 
@@ -849,7 +882,7 @@ def solve_round4_exotic_portfolio(
     seed: int = 42,
     days_per_year: float = 252.0,
 ) -> ExoticPortfolioResult:
-    """Optimize multi-contract portfolio PnL minus variance penalty on common paths."""
+    """Optimize multi-contract portfolio PnL minus variance penalty on terminal Day-T payoffs."""
     if not specs:
         return ExoticPortfolioResult(
             names=(),
@@ -875,10 +908,11 @@ def solve_round4_exotic_portfolio(
     log_rets = -0.5 * step_sigma * step_sigma + step_sigma * z
     paths = spot * np.exp(np.cumsum(log_rets, axis=1))
 
-    # Build net-of-quote pathwise P&L matrix `(n_samples, n_assets)`
+    # Build pathwise terminal P&L matrix `(n_samples, n_assets)` and closed-form edges where exact
     pnl_cols: list[NDArray[np.float64]] = []
     names: list[str] = []
     edges: dict[str, float] = {}
+    mu_vec: list[float] = []
     bounds: list[tuple[float, float]] = []
 
     for spec in specs:
@@ -887,11 +921,30 @@ def solve_round4_exotic_portfolio(
         net = payoffs - spec.ask_price
         pnl_cols.append(net)
         names.append(spec.name)
-        edges[spec.name] = float(np.mean(net))
+        if spec.kind == "knockout_put":
+            edge = float(np.mean(net))
+        else:
+            edge = (
+                price_aether_crystal_contract(
+                    spec,
+                    spot=spot,
+                    step_sigma_log=annualized_to_step_sigma(
+                        annual_vol,
+                        spec.steps_per_day,
+                        int(days_per_year),
+                    ),
+                    n_paths=n_paths,
+                    seed=seed,
+                    days_per_year=days_per_year,
+                ).fair_value
+                - spec.ask_price
+            )
+        edges[spec.name] = edge
+        mu_vec.append(edge)
         bounds.append(lot_bounds.get(spec.name, (-50.0, 50.0)))
 
     mat = np.column_stack(pnl_cols)
-    mu = np.mean(mat, axis=0)
+    mu = np.asarray(mu_vec, dtype=np.float64)
     cov = np.cov(mat, rowvar=False, ddof=1)
     if cov.ndim == 0:
         cov = np.array([[float(cov)]], dtype=np.float64)
@@ -903,7 +956,7 @@ def solve_round4_exotic_portfolio(
     )
     u_pnls = mat @ unhedged_w
     u_std = float(np.std(u_pnls, ddof=1))
-    u_sharpe = float(np.mean(u_pnls) / u_std) if u_std > 1e-9 else 0.0
+    u_sharpe = float(float(mu @ unhedged_w) / u_std) if u_std > 1e-9 else 0.0
 
     # Mean-variance optimization with SLSQP
     x0 = unhedged_w * 0.5
@@ -915,7 +968,7 @@ def solve_round4_exotic_portfolio(
     )
     w_opt = opt.x if opt.success else unhedged_w
     port_pnls = mat @ w_opt
-    exp_pnl = float(np.mean(port_pnls))
+    exp_pnl = float(mu @ w_opt)
     p_std = float(np.std(port_pnls, ddof=1))
     p_sharpe = float(exp_pnl / p_std) if p_std > 1e-9 else 0.0
     var95 = float(np.percentile(port_pnls, 5.0))

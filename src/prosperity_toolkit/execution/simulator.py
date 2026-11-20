@@ -133,6 +133,37 @@ class ExecutionSimulator:
 
         return fills, resting
 
+    @staticmethod
+    def remaining_book_after_taker(
+        book: OrderBookL2,
+        taker_fills: list[FillEvent],
+    ) -> OrderBookL2:
+        """Return post-taker residual L2 order book with filled touch depth deducted."""
+        if not taker_fills:
+            return book
+        rem_bids = dict(book.bids)
+        rem_asks = dict(book.asks)
+        for fill in taker_fills:
+            if fill.symbol != book.symbol or fill.quantity == 0:
+                continue
+            if fill.quantity > 0:
+                # Taker buy depleted negative ask liquidity at fill.price
+                curr = rem_asks.get(fill.price, 0)
+                updated = curr + fill.quantity
+                if updated >= 0:
+                    rem_asks.pop(fill.price, None)
+                else:
+                    rem_asks[fill.price] = updated
+            else:
+                # Taker sell depleted positive bid liquidity at fill.price
+                curr = rem_bids.get(fill.price, 0)
+                updated = curr + fill.quantity
+                if updated <= 0:
+                    rem_bids.pop(fill.price, None)
+                else:
+                    rem_bids[fill.price] = updated
+        return OrderBookL2(symbol=book.symbol, bids=rem_bids, asks=rem_asks)
+
     def match_maker_orders(
         self,
         timestamp: Timestamp,
@@ -149,7 +180,19 @@ class ExecutionSimulator:
         bid_queue = {p: abs(v) for p, v in book.bids.items()} if book is not None else {}
         ask_queue = {p: abs(v) for p, v in book.asks.items()} if book is not None else {}
 
-        for order in resting_orders:
+        # Enforce strict price-time priority independently on bid and ask sides
+        indexed = list(enumerate(resting_orders))
+        buy_side = sorted(
+            [(idx, o) for idx, o in indexed if o.quantity > 0],
+            key=lambda item: (-item[1].price, item[0]),
+        )
+        sell_side = sorted(
+            [(idx, o) for idx, o in indexed if o.quantity < 0],
+            key=lambda item: (item[1].price, item[0]),
+        )
+        ordered_resting = [o for _, o in buy_side] + [o for _, o in sell_side]
+
+        for order in ordered_resting:
             remaining = abs(order.quantity)
             is_buy = order.quantity > 0
 
@@ -182,8 +225,11 @@ class ExecutionSimulator:
                             q_map[order.price] = ahead - rem_trade_vols[idx]
                             rem_trade_vols[idx] = 0
                             continue
-                        fillable_vol = rem_trade_vols[idx] - ahead
+                        # Deduct resting queue depth ahead from remaining trade volume so
+                        # subsequent orders cannot reuse the already-consumed queue volume.
+                        rem_trade_vols[idx] -= ahead
                         q_map[order.price] = 0
+                        fillable_vol = rem_trade_vols[idx]
                     else:
                         continue
 
