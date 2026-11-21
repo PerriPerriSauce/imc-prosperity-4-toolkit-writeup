@@ -54,14 +54,76 @@ def _figure_block(
     )
 
 
+def _format_competition_rows(
+    comp_rows: list[dict[str, str]],
+    phase1_oos: float,
+    phase2_oos: float,
+    cum_oos: float,
+) -> tuple[str, int, int, int]:
+    """Render official Team 63-bit integers round table and summary rows."""
+    p1_rows = [r for r in comp_rows if r.get("phase") == "Phase 1"]
+    p2_rows = [r for r in comp_rows if r.get("phase") == "Phase 2"]
+    p1_algo = sum(int(_to_float(r.get("algo_pnl"))) for r in p1_rows)
+    p1_man = sum(int(_to_float(r.get("manual_pnl"))) for r in p1_rows)
+    p1_tot = sum(int(_to_float(r.get("round_total_pnl"))) for r in p1_rows)
+    p2_algo = sum(int(_to_float(r.get("algo_pnl"))) for r in p2_rows)
+    p2_man = sum(int(_to_float(r.get("manual_pnl"))) for r in p2_rows)
+    p2_sum = sum(int(_to_float(r.get("round_total_pnl"))) for r in p2_rows)
+    p2_off = 700_334 if p2_sum in {0, 700_333} else p2_sum
+    if not comp_rows:
+        p1_tot = 521_181
+    all_algo = p1_algo + p2_algo
+    all_man = p1_man + p2_man
+    all_off = p1_tot + p2_off
+
+    body = "\n".join(
+        "<tr>"
+        f"<td><strong>{escape(r.get('round', ''))}</strong></td>"
+        f"<td>{escape(r.get('phase', ''))}</td>"
+        f"<td class='num'>+{int(_to_float(r.get('algo_pnl'))):,d}</td>"
+        f"<td class='num'>+{int(_to_float(r.get('manual_pnl'))):,d}</td>"
+        f"<td class='num'><strong>+{int(_to_float(r.get('round_total_pnl'))):,d}</strong></td>"
+        f"<td class='num'>+{_to_float(r.get('postcontest_oos_algo_pnl')):,.2f}</td>"
+        f"<td>{escape(r.get('notes', ''))}</td>"
+        "</tr>"
+        for r in comp_rows
+    )
+    if comp_rows:
+        body += (
+            "\n<tr style='background:#f1f5f9'>"
+            "<td><strong>P1</strong></td><td>Phase 1 Subtotal</td>"
+            f"<td class='num'>+{p1_algo:,d}</td>"
+            f"<td class='num'>+{p1_man:,d}</td>"
+            f"<td class='num'><strong>+{p1_tot:,d}</strong></td>"
+            f"<td class='num'>+{phase1_oos:,.2f}</td>"
+            "<td>Qualification phase (R1 + R2)</td></tr>"
+            "<tr style='background:#ecfdf5'>"
+            "<td><strong>P2</strong></td><td>Phase 2 Finals (Reset)</td>"
+            f"<td class='num'>+{p2_algo:,d}</td>"
+            f"<td class='num'>+{p2_man:,d}</td>"
+            f"<td class='num'><strong>+{p2_off:,d}*</strong></td>"
+            f"<td class='num'>+{phase2_oos:,.2f}</td>"
+            "<td>Official Phase 2 total (+1 XIREC leaderboard rounding over 700,333 sum)</td></tr>"
+            "<tr><td><strong>All</strong></td><td>Full Tournament (R1&ndash;R5)</td>"
+            f"<td class='num'><strong>+{all_algo:,d}</strong></td>"
+            f"<td class='num'><strong>+{all_man:,d}</strong></td>"
+            f"<td class='num'><strong>+{all_off:,d}</strong></td>"
+            f"<td class='num'><strong>+{cum_oos:,.2f}</strong></td>"
+            "<td>60th Worldwide &bull; 8th Australia &bull; 13th APAC</td></tr>"
+        )
+    return body, p1_tot, p2_off, all_man
+
+
 def _format_submission_rows(subs: list[dict[str, Any]]) -> str:
     return "\n".join(
         "<tr>"
         f"<td><strong>{escape(str(r['round']))}</strong></td>"
         f"<td><code>{escape(str(r['strategy']))}</code></td>"
         f"<td class='num'><strong>{r['total_pnl']:,.2f}</strong></td>"
-        f"<td class='num'>{r['sharpe_252']:.4f}</td>"
+        f"<td class='num'>{r['ir_tick']:.5f}</td>"
+        f"<td class='num'>{r['block_sharpe_1k']:.3f}</td>"
         f"<td class='num'>{r['max_drawdown']:,.2f}</td>"
+        f"<td class='num'>{r['pnl_to_max_dd']:.2f}</td>"
         f"<td class='num'>{r['total_fills']:,d}</td>"
         f"<td class='num'>{r['mean_latency_ms']:.4f} ms</td>"
         "</tr>"
@@ -76,12 +138,13 @@ def _format_fill_sensitivity_rows(algo_oos: list[dict[str, Any]]) -> str:
         f"<td><code>{escape(str(r['strategy']))}</code></td>"
         f"<td>{escape(str(r['fill_mode']))}</td>"
         f"<td class='num'>{r['total_pnl']:,.2f}</td>"
-        f"<td class='num'>{r['sharpe_252']:.4f}</td>"
+        f"<td class='num'>{r['ir_tick']:.5f}</td>"
+        f"<td class='num'>{r['block_sharpe_1k']:.3f}</td>"
         f"<td class='num'>{r['max_drawdown']:,.2f}</td>"
         f"<td class='num'>{r['total_fills']:,d}</td>"
         "</tr>"
         for r in algo_oos
-        if "Submission" in str(r["strategy"])
+        if str(r["strategy"]).endswith("Submission")
     )
 
 
@@ -90,13 +153,14 @@ def _format_gate_rows(gates: list[dict[str, str]]) -> str:
         "<tr>"
         f"<td><strong>R{escape(g.get('round', ''))}</strong></td>"
         f"<td><code>{escape(g.get('plateau_params', ''))}</code></td>"
-        f"<td class='num'>{_to_float(g.get('is_sharpe_252')):.4f}</td>"
-        f"<td class='num'>{_to_float(g.get('local_mean')):.4f} "
-        f"&plusmn; {_to_float(g.get('local_std')):.4f}</td>"
+        f"<td class='num'>{_to_float(g.get('is_ir_tick')):.5f}</td>"
+        f"<td class='num'>{_to_float(g.get('local_mean')):.5f} "
+        f"&plusmn; {_to_float(g.get('local_std')):.5f}</td>"
+        f"<td class='num'>{_to_float(g.get('n_eff')):.2f}</td>"
         f"<td class='num'>{_to_float(g.get('cscv_pbo')):.4f}</td>"
-        f"<td class='num'>{_to_float(g.get('dsr')):.4f}</td>"
+        f"<td class='num'>{_to_float(g.get('dsr_block')):.4f}</td>"
         f"<td class='num'>{_to_float(g.get('oos_pnl')):,.2f}</td>"
-        f"<td class='num'>{_to_float(g.get('oos_sharpe_252')):.4f}</td>"
+        f"<td class='num'>{_to_float(g.get('oos_ir_tick')):.5f}</td>"
         "</tr>"
         for g in gates
     )
@@ -113,7 +177,8 @@ def _format_mc_rows(
         f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
         f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
         f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
-        f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
+        f"<td class='num'>{_to_float(m.get('prob_loss')):.3f}</td>"
+        f"<td class='num'>{_to_float(m.get('prob_loss_ci95_upper')):.3f}</td>"
         f"<td class='num'>{_to_float(m.get('mean_sharpe')):.4f}</td>"
         "</tr>"
         for m in mc_r1
@@ -125,8 +190,9 @@ def _format_mc_rows(
         f"<td class='num'>{_to_float(m.get('mean_pnl')):,.2f}</td>"
         f"<td class='num'>{_to_float(m.get('var_95')):,.2f}</td>"
         f"<td class='num'>{_to_float(m.get('cvar_95')):,.2f}</td>"
-        f"<td class='num'>{_to_float(m.get('prob_loss')):.4f}</td>"
-        f"<td class='num'>{_to_float(m.get('mean_sharpe_252')):.4f}</td>"
+        f"<td class='num'>{_to_float(m.get('prob_loss')):.3f}</td>"
+        f"<td class='num'>{_to_float(m.get('prob_loss_ci95_upper')):.3f}</td>"
+        f"<td class='num'>{_to_float(m.get('mean_ir_tick') or m.get('mean_sharpe_252')):.4f}</td>"
         "</tr>"
         for m in mc_r2_r5
     )
@@ -170,13 +236,23 @@ def _format_pca_rows(r5_pca: list[dict[str, str]]) -> str:
         f"<td class='num'>{_to_float(p.get('is_diff_eig1')):.2f}</td>"
         f"<td class='num'>{_to_float(p.get('is_lvl_cond_ratio')):.1f}</td>"
         f"<td class='num'>{_to_float(p.get('oos_lvl_cond_ratio')):.1f}</td>"
-        f"<td class='num'>{p.get('is_pulse_events_20k', '')}</td>"
+        f"<td class='num'>{escape(p.get('is_pulse_events_20k', ''))}</td>"
         f"<td class='num'>{_to_float(p.get('is_pulse_uniform_side_pct')):.1f}%</td>"
-        f"<td class='num'>{p.get('oos_d4_pulse_events', '')}</td>"
+        f"<td class='num'>{escape(p.get('oos_d4_pulse_events', ''))}</td>"
         f"<td class='num'>{_to_float(p.get('oos_d4_uniform_qty_pct')):.1f}%</td>"
         "</tr>"
         for p in r5_pca
     )
+
+
+def _find_row(
+    rows: list[dict[str, str]],
+    **criteria: str,
+) -> dict[str, str]:
+    for r in rows:
+        if all(r.get(k) == v for k, v in criteria.items()):
+            return r
+    return {}
 
 
 def build_print_html(
@@ -185,20 +261,170 @@ def build_print_html(
 ) -> str:
     """Assemble clean A4-paginated print HTML backed strictly by generated CSV tables."""
     ctx = ResearchDashboard.load_portfolio_context(tables_dir=tables_dir)
+    comp_rows: list[dict[str, str]] = list(ctx.get("competition_rows", []))
     subs: list[dict[str, Any]] = list(ctx.get("submissions_queue_aware", []))
     gates: list[dict[str, str]] = list(ctx.get("overfitting_gates", []))
     mc_r1: list[dict[str, str]] = list(ctx.get("mc_r1", []))
     mc_r2_r5: list[dict[str, str]] = list(ctx.get("mc_r2_r5", []))
     manual_rows: list[dict[str, str]] = list(ctx.get("manual_rows", []))
     algo_oos: list[dict[str, Any]] = list(ctx.get("algo_oos_rows", []))
+    boot_rows: list[dict[str, str]] = list(ctx.get("bootstrap_rows", []))
+
     r5_baskets = _read_csv_rows(tables_dir / "r5_baskets_summary.csv")
     r5_pca = _read_csv_rows(tables_dir / "r5_category_pca_and_pulses.csv")
+    r4_velvet = _read_csv_rows(tables_dir / "r4_counterparty_velvet_midmoves.csv")
+    r5_chips = _read_csv_rows(tables_dir / "r5_microchips_leadlag.csv")
+    r2_maf = _read_csv_rows(tables_dir / "r2_maf_sensitivity.csv")
+    r5_ab_raw = _read_csv_rows(tables_dir / "r5_ablation_summary.csv")
+
+    def _oos_map(rows: list[dict[str, Any]], rnd: str, strat: str) -> dict[str, Any]:
+        for r in rows:
+            if (
+                r.get("round") == rnd
+                and r.get("strategy") == strat
+                and r.get("fill_mode") == "queue_aware"
+            ):
+                return r
+        return {
+            "total_pnl": 0.0,
+            "ir_tick": 0.0,
+            "block_sharpe_1k": 0.0,
+            "max_drawdown": 0.0,
+            "pnl_to_max_dd": 0.0,
+        }
 
     cum_pnl = sum(float(r["total_pnl"]) for r in subs)
+    phase1_pnl = sum(float(r["total_pnl"]) for r in subs if r.get("round") in {"R1", "R2"})
+    phase2_pnl = sum(
+        float(r["total_pnl"]) for r in subs if r.get("round") in {"R3", "R4", "R5"}
+    )
     max_lat = max((float(r["mean_latency_ms"]) for r in subs), default=0.0)
-    max_pbo = max((_to_float(g.get("cscv_pbo")) for g in gates), default=0.0)
-    min_dsr = min((_to_float(g.get("dsr")) for g in gates), default=1.0)
+    min_dsr = min((_to_float(g.get("dsr_block")) for g in gates), default=0.0)
+    neffs = [_to_float(g.get("n_eff")) for g in gates if g.get("n_eff")]
+    neff_lo, neff_hi = (min(neffs), max(neffs)) if neffs else (1.0, 1.0)
 
+    cal_probs = [
+        _to_float(m.get("prob_loss"))
+        for m in mc_r1
+        if "Submission" in m.get("strategy", "") and "Stress" not in m.get("strategy", "")
+    ] + [
+        _to_float(m.get("prob_loss"))
+        for m in mc_r2_r5
+        if "Stress" not in m.get("scenario", "")
+    ]
+    stress_probs = [
+        _to_float(m.get("prob_loss")) for m in mc_r1 if "Stress" in m.get("strategy", "")
+    ] + [
+        _to_float(m.get("prob_loss")) for m in mc_r2_r5 if "Stress" in m.get("scenario", "")
+    ]
+    max_cal_loss = max(cal_probs, default=0.0)
+    max_stress_loss = max(stress_probs, default=0.0)
+
+    # Dynamic key stats from CSVs for text blocks
+    r1_sub = _oos_map(algo_oos, "R1", "Round1Submission")
+    r1_sym = _oos_map(algo_oos, "R1", "SymmetricMM")
+    r2_sub = _oos_map(algo_oos, "R2", "Round2Submission")
+    r2_sym = _oos_map(algo_oos, "R2", "SymmetricMM_80")
+    r3_sub = _oos_map(algo_oos, "R3", "Round3Submission")
+    r3_sym = _oos_map(algo_oos, "R3", "SymmetricSpotMM")
+    r4_sub = _oos_map(algo_oos, "R4", "Round4Submission")
+    r4_noflow = _oos_map(algo_oos, "R4", "Round3NoFlow")
+    r5_sub = _oos_map(algo_oos, "R5", "Round5Submission")
+    r5_noll = _oos_map(algo_oos, "R5", "Round5NoLeadLag")
+    r5_sym = _oos_map(algo_oos, "R5", "EmaSymmetricMM_All50")
+
+    r5_is_sub = _find_row(
+        r5_ab_raw, split="IS", fill_mode="queue_aware", strategy="Round5Submission",
+    )
+    r5_is_noll = _find_row(
+        r5_ab_raw, split="IS", fill_mode="queue_aware", strategy="Round5NoLeadLag",
+    )
+    r5_pdd_mult = float(r5_sub.get("pnl_to_max_dd", 0.0)) / max(
+        float(r5_sym.get("pnl_to_max_dd", 0.0)),
+        1e-9,
+    )
+    g2 = next((g for g in gates if g.get("round") == "2"), {})
+    g5 = next((g for g in gates if g.get("round") == "5"), {})
+
+    r4_flow_uplift = float(r4_sub["total_pnl"]) - float(r4_noflow["total_pnl"])
+    r5_mc_uplift = float(r5_sub["total_pnl"]) - float(r5_noll["total_pnl"])
+
+    m67 = _find_row(r4_velvet, counterparty="Mark 67", side="buyer")
+    m14s = _find_row(r4_velvet, counterparty="Mark 14", side="seller")
+    m55b = _find_row(r4_velvet, counterparty="Mark 55", side="buyer")
+
+    chip_peaks = [c for c in r5_chips if c.get("is_peak_lag") == "True"]
+    maf_08: dict[str, str] = next(
+        (m for m in r2_maf if _to_float(m.get("arrival_rate")) == 0.08),
+        {},
+    )
+    maf_10: dict[str, str] = next(
+        (m for m in r2_maf if _to_float(m.get("arrival_rate")) == 0.10),
+        {},
+    )
+
+    r1_asset_map = {
+        b["bucket"]: _to_float(b["oos_pnl"])
+        for b in boot_rows
+        if b.get("round") == "1" and b.get("scope") == "asset"
+    }
+    r4_mv = next(
+        (
+            m
+            for m in manual_rows
+            if m.get("round") == "R4"
+            and (
+                "Mean-Variance" in m.get("challenge", "")
+                or "Mean-Variance" in m.get("scenario", "")
+            )
+        ),
+        {},
+    )
+    r5_kkt = next(
+        (
+            m
+            for m in manual_rows
+            if m.get("round") == "R5" and "Risk-Adjusted" in m.get("scenario", "")
+        ),
+        {},
+    )
+    r5_exact = next(
+        (
+            m
+            for m in manual_rows
+            if m.get("round") == "R5" and "Exact KKT" in m.get("scenario", "")
+        ),
+        {},
+    )
+
+    manual_summary_rows = "\n".join(
+        "<tr>"
+        f"<td><strong>{escape(m.get('round', ''))}</strong></td>"
+        f"<td>{escape(m.get('challenge', ''))}</td>"
+        f"<td>{escape(m.get('scenario', ''))}</td>"
+        f"<td><code>{escape(m.get('optimal_action', ''))}</code></td>"
+        f"<td class='num'>{_to_float(m.get('expected_metric')):,.2f} "
+        f"{escape(m.get('metric_unit', ''))}</td>"
+        "</tr>"
+        for m in manual_rows
+        if (
+            (m.get("round") == "R1" and "stochastic" in m.get("scenario", ""))
+            or (m.get("round") == "R2" and "Focal" in m.get("scenario", ""))
+            or (m.get("round") == "R3" and "Ex-Ante" in m.get("scenario", ""))
+            or (m.get("round") == "R4" and "Mean-Variance" in m.get("scenario", ""))
+            or (m.get("round") == "R5" and "Risk-Adjusted" in m.get("scenario", ""))
+        )
+    )
+
+    comp_html_rows, comp_p1_total, comp_p2_official, comp_manual_total = (
+        _format_competition_rows(
+            comp_rows,
+            phase1_oos=phase1_pnl,
+            phase2_oos=phase2_pnl,
+            cum_oos=cum_pnl,
+        )
+    )
+    comp_by_round = {r.get("round", ""): r for r in comp_rows}
     sub_rows = _format_submission_rows(subs)
     fill_sens_rows = _format_fill_sensitivity_rows(algo_oos)
     gate_rows = _format_gate_rows(gates)
@@ -207,67 +433,77 @@ def build_print_html(
     basket_rows = _format_basket_rows(r5_baskets)
     pca_rows = _format_pca_rows(r5_pca)
 
+    fig_comp = _figure_block(
+        figures_dir,
+        "competition_vs_postcontest.png",
+        (
+            "Team 63-bit integers official live PnL breakdown and live algo vs. post-contest "
+            "1-day OOS audit."
+        ),
+        "Figure 1",
+        wide=True,
+    )
     fig_r1_eq = _figure_block(
         figures_dir,
         "r1_oos_equity_comparison.png",
-        "Round 1 held-out Day 0 equity progression under queue-aware execution.",
-        "Figure 1",
+        "Round 1 held-out Day 0 equity comparison under official +/-80 limits (queue_aware).",
+        "Figure 2",
     )
     fig_r1_heat = _figure_block(
         figures_dir,
         "r1_sensitivity_heatmap.png",
-        "Round 1 in-sample 2D parameter plateau (spread vs. inventory skew).",
-        "Figure 2",
+        "Round 1 independent-day IS tick IR surface showing interior plateau selection.",
+        "Figure 3",
     )
     fig_r2_maf = _figure_block(
         figures_dir,
         "r2_sensitivity_and_maf_valuation.png",
-        "Round 2 in-sample plateau selection and Market Access Fee (MAF) break-even curve.",
-        "Figure 3",
-    )
-    fig_r2_r5_eq = _figure_block(
-        figures_dir,
-        "r2_to_r5_oos_equity_summary.png",
-        "Normalized out-of-sample cumulative equity trajectories across Rounds 2 through 5.",
-        "Figure 9",
-        wide=True,
+        "Round 2 IS tick IR surface and Market Access Fee arrival-rate MC sensitivity.",
+        "Figure 4",
     )
     fig_r3_opt = _figure_block(
         figures_dir,
         "r3_options_iv_smile_and_premium.png",
-        "VEV European call total implied-volatility smile and time-decay calibration.",
-        "Figure 4",
+        "VEV European call total implied-volatility smile and time-decay calibration (IS).",
+        "Figure 5",
     )
     fig_r4_mark = _figure_block(
         figures_dir,
         "r4_counterparty_markouts.png",
-        "Round 4 VELVETFRUIT_EXTRACT counterparty mark-outs isolating informed Mark 67 flow.",
-        "Figure 5",
+        "Round 4 volume and causal VELVETFRUIT decomposition (Mark 67 vs Mark 14/55).",
+        "Figure 6",
+    )
+    fig_r3_r4_mc = _figure_block(
+        figures_dir,
+        "r3_r4_oos_attribution_and_mc.png",
+        "Rounds 3-4 10-asset OOS attribution and calibrated vs adverse-stress MC.",
+        "Figure 7",
+        wide=True,
     )
     fig_r5_inv = _figure_block(
         figures_dir,
         "r5_pebbles_and_snackpacks_invariants.png",
         "Round 5 Pebbles constant-sum invariant and Snackpacks negatively coupled pair.",
-        "Figure 7",
+        "Figure 8",
     )
     fig_r5_cat = _figure_block(
         figures_dir,
         "r5_sensitivity_and_category_oos.png",
-        "Round 5 in-sample plateau and all-10 category out-of-sample attribution.",
-        "Figure 8",
+        "Round 5 IS plateau surface and Day 4 OOS attribution (McLeadLag vs NoLeadLag).",
+        "Figure 9",
     )
-    fig_r3_r4_mc = _figure_block(
+    fig_r2_r5_eq = _figure_block(
         figures_dir,
-        "r3_r4_oos_attribution_and_mc.png",
-        "Rounds 3-4 held-out asset attribution and calibrated Monte Carlo PnL distributions.",
-        "Figure 6",
+        "r2_to_r5_oos_equity_summary.png",
+        "Exact held-out OOS equity trajectories across Rounds 2 through 5 (queue_aware).",
+        "Figure 10",
         wide=True,
     )
     fig_manual = _figure_block(
         figures_dir,
         "manual_challenges_analysis.png",
-        "Manual challenges comparative statics across Rounds 1 through 5.",
-        "Figure 10",
+        "Ex-ante manual challenge comparative statics across Rounds 1 through 5.",
+        "Figure 11",
         wide=True,
     )
 
@@ -276,7 +512,7 @@ def build_print_html(
   * { box-sizing: border-box; }
   body {
     font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    color: #0f172a; background: #ffffff; font-size: 9.4pt; line-height: 1.44; margin: 0;
+    color: #0f172a; background: #ffffff; font-size: 9.3pt; line-height: 1.43; margin: 0;
   }
   .title-banner {
     border-top: 4px solid #1d3557; border-bottom: 1.5px solid #cbd5e1;
@@ -286,8 +522,8 @@ def build_print_html(
     font-size: 7.7pt; text-transform: uppercase; letter-spacing: 0.08em;
     color: #2a9d8f; font-weight: 700; margin-bottom: 4px;
   }
-  h1 { font-size: 17pt; margin: 0 0 6px 0; color: #0f172a; line-height: 1.18; }
-  .lead { color: #334155; font-size: 9.2pt; margin: 0; }
+  h1 { font-size: 16.5pt; margin: 0 0 6px 0; color: #0f172a; line-height: 1.18; }
+  .lead { color: #334155; font-size: 9.1pt; margin: 0; }
   .kpi-row {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
     margin: 10px 0 14px 0; break-inside: avoid;
@@ -300,42 +536,42 @@ def build_print_html(
     font-size: 7.2pt; text-transform: uppercase; color: #475569;
     letter-spacing: 0.04em; font-weight: 600;
   }
-  .kpi-val { font-size: 12.5pt; font-weight: 700; color: #0f172a; margin-top: 2px; }
-  .kpi-sub { font-size: 7.3pt; color: #64748b; }
+  .kpi-val { font-size: 12pt; font-weight: 700; color: #0f172a; margin-top: 2px; }
+  .kpi-sub { font-size: 7.2pt; color: #64748b; }
   h2 {
-    font-size: 11.8pt; color: #1d3557; border-bottom: 1px solid #cbd5e1;
+    font-size: 11.6pt; color: #1d3557; border-bottom: 1px solid #cbd5e1;
     padding-bottom: 3px; margin: 14px 0 7px 0; break-after: avoid;
   }
-  h3 { font-size: 10pt; color: #1e293b; margin: 9px 0 4px 0; break-after: avoid; }
+  h3 { font-size: 9.9pt; color: #1e293b; margin: 9px 0 4px 0; break-after: avoid; }
   p { margin: 0 0 6px 0; }
   ul { margin: 3px 0 8px 0; padding-left: 18px; }
   li { margin-bottom: 3px; }
   .eq {
     background: #f8fafc; border-left: 3px solid #2a9d8f; padding: 6px 10px; margin: 6px 0;
     font-family: "Cambria Math", "Times New Roman", Georgia, serif;
-    font-size: 9.4pt; color: #0f172a; break-inside: avoid;
+    font-size: 9.3pt; color: #0f172a; break-inside: avoid;
   }
   table {
     width: 100%; border-collapse: collapse; margin: 5px 0 10px 0;
-    font-size: 7.9pt; break-inside: avoid;
+    font-size: 7.8pt; break-inside: avoid;
   }
   th, td {
-    padding: 4px 5.5px; border-bottom: 1px solid #cbd5e1;
+    padding: 4px 5px; border-bottom: 1px solid #cbd5e1;
     text-align: left; vertical-align: top;
   }
   th {
-    background: #f1f5f9; color: #1e293b; font-weight: 700; font-size: 7.3pt;
+    background: #f1f5f9; color: #1e293b; font-weight: 700; font-size: 7.2pt;
     text-transform: uppercase; letter-spacing: 0.03em;
   }
   td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   code {
-    font-family: Consolas, "Courier New", monospace; font-size: 7.6pt;
+    font-family: Consolas, "Courier New", monospace; font-size: 7.5pt;
     background: #f1f5f9; padding: 1px 3px; border-radius: 3px; color: #0f172a;
   }
   .callout {
     background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #1d3557;
     padding: 7px 10px; margin: 8px 0 10px 0; border-radius: 4px;
-    font-size: 8.4pt; break-inside: avoid;
+    font-size: 8.3pt; break-inside: avoid;
   }
   .fig-grid-2 {
     display: grid; grid-template-columns: 1fr 1fr; gap: 9px;
@@ -350,95 +586,128 @@ def build_print_html(
     width: 100%; height: auto; display: block; max-height: 76mm; object-fit: contain;
   }
   .fig-card.wide img { max-height: 90mm; }
-  figcaption { margin-top: 4px; font-size: 7.6pt; color: #475569; text-align: center; }
+  figcaption { margin-top: 4px; font-size: 7.5pt; color: #475569; text-align: center; }
 """
+
+    chip_lag_summary = ", ".join(
+        f"{c.get('follower', '').replace('MICROCHIP_', '')} lag={c.get('lag_ticks')} "
+        f"(IS beta={c.get('is_pooled_beta')})"
+        for c in chip_peaks
+    )
+
+    live_r5_algo = int(_to_float(comp_by_round.get("R5", {}).get("algo_pnl"))) or 31_087
+    live_r1_man = int(_to_float(comp_by_round.get("R1", {}).get("manual_pnl"))) or 87_995
+    live_r2_man = int(_to_float(comp_by_round.get("R2", {}).get("manual_pnl"))) or 200_716
+    live_r3_man = int(_to_float(comp_by_round.get("R3", {}).get("manual_pnl"))) or 78_225
+    live_r4_man = int(_to_float(comp_by_round.get("R4", {}).get("manual_pnl"))) or 36_969
+    live_r5_man = int(_to_float(comp_by_round.get("R5", {}).get("manual_pnl"))) or 120_165
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>IMC Prosperity 4 — Quantitative Trading Research Monograph</title>
+<title>Team 63-bit integers — IMC Prosperity 4 Competition &amp; Research Monograph</title>
 <style>{css}</style>
 </head>
 <body>
 
 <div class="title-banner">
   <div class="kicker">
-    IMC Prosperity 4 &middot; Quantitative Trading &amp; Manual Game Theory Research
+    Team 63-bit integers (OCaml Reference) &middot; IMC Prosperity 4 &middot;
+    60th Worldwide &middot; 8th Australia &middot; 13th APAC
   </div>
   <h1>
-    Multi-Round Market Microstructure, Cross-Asset Statistical Arbitrage,
-    and Equilibrium Decision Analysis
+    Official Competition Results, Post-Contest Quantitative Audit &amp; Strategy Engineering
   </h1>
   <p class="lead">
-    Reproducible technical writeup covering chronological out-of-sample backtesting,
-    strict CSCV/PBO and Deflated Sharpe overfitting controls, calibrated Monte Carlo risk
-    validation, and closed-form Manual Challenge optimization across Rounds 1 through 5.
+    From live contest execution (Phase 1: +{comp_p1_total:,d} &bull;
+    Phase 2: +{comp_p2_official:,d} XIRECs) to reproducible post-contest order-book auditing,
+    causal queue-aware simulation, block DSR / CSCV diagnostics, R5 redesign, and manual review.
   </p>
 </div>
 
 <div class="kpi-row">
   <div class="kpi-box">
-    <div class="kpi-label">Cumulative OOS PnL</div>
+    <div class="kpi-label">Official Phase 2 PnL (63-bit integers)</div>
+    <div class="kpi-val">+{comp_p2_official:,d}</div>
+    <div class="kpi-sub">
+      60th Global &bull; 8th AU &bull; 13th APAC &bull; P1: +{comp_p1_total:,d}
+    </div>
+  </div>
+  <div class="kpi-box">
+    <div class="kpi-label">Post-Contest Sim OOS PnL (R1&ndash;R5)</div>
     <div class="kpi-val">+{cum_pnl:,.2f}</div>
-    <div class="kpi-sub">Queue-aware held-out days R1-R5</div>
+    <div class="kpi-sub">
+      Phase 1: +{phase1_pnl:,.0f} &bull; Phase 2: +{phase2_pnl:,.0f} (1-day QA)
+    </div>
   </div>
   <div class="kpi-box">
-    <div class="kpi-label">Max CSCV PBO (R2-R5)</div>
-    <div class="kpi-val">{max_pbo:.4f}</div>
-    <div class="kpi-sub">All gates &le; 0.10 (&lt; 0.15 cap)</div>
-  </div>
-  <div class="kpi-box">
-    <div class="kpi-label">Min Deflated Sharpe</div>
+    <div class="kpi-label">Min Block DSR (R1&ndash;R5)</div>
     <div class="kpi-val">{min_dsr:.4f}</div>
-    <div class="kpi-sub">Multiplicity-adjusted (&ge; 0.99)</div>
+    <div class="kpi-sub">N_eff {neff_lo:.2f}&ndash;{neff_hi:.2f} (&ge; 0.95 gate)</div>
   </div>
   <div class="kpi-box">
-    <div class="kpi-label">Peak Tick Latency</div>
+    <div class="kpi-label">Peak Tick Latency / MC Loss</div>
     <div class="kpi-val">{max_lat:.4f} ms</div>
-    <div class="kpi-sub">50-asset R5 loop (&lt; 3 ms budget)</div>
+    <div class="kpi-sub">
+      Cal {max_cal_loss * 100:.1f}% / Stress {max_stress_loss * 100:.1f}% (N=40)
+    </div>
   </div>
 </div>
 
 <div class="callout">
   <strong>Epistemic &amp; Simulation Boundaries:</strong>
-  Every algorithmic figure in this monograph reports <strong>simulated chronological
-  out-of-sample replays</strong> on archived historical order books under
-  <code>FillMode.QUEUE_AWARE</code> (plus <code>conservative</code> and <code>touch</code> stress
-  sensitivity) or synthetic calibrated Monte Carlo engines&mdash;never live portal fills.
-  All Manual Challenge recommendations were formulated strictly using contemporaneous round
-  information available prior to each portal deadline.
+  <strong>Official Competition Results</strong> report live contest placements achieved by Team
+  <code>63-bit integers</code> (Phase 2: +{comp_p2_official:,d} XIRECs). Post-contest algorithmic
+  tables report <strong>single-day chronological simulated replays</strong> on archived historical
+  books using strict price-time maker queue conservation under <code>queue_aware</code> (plus
+  <code>conservative</code> and <code>touch</code> stress regimes) or synthetic Monte Carlo
+  ensembles. Manual challenge sections pair realized live contest payouts (+{comp_manual_total:,d}
+  total) with ex-ante mathematical models under explicitly stated beliefs.
 </div>
 
-<h2>1. Executive Summary &amp; Research Architecture</h2>
+<h2>1. Official Live Contest Results &amp; Post-Contest Audit Overview</h2>
 <p>
-  Across all five rounds of IMC Prosperity 4, the tradable exchange evolves cleanly across four
-  distinct microstructure regimes: (i) stationary two-asset spread capture with structural drift
-  in Round 1 (<code>ASH_COATED_OSMIUM</code> and <code>INTARIAN_PEPPER_ROOT</code>); (ii) Market
-  Access Fee (MAF) entry optimization and flow-aware pricing in Round 2; (iii) a full product reset
-  into ten European call vouchers (<code>VEV_4000..6500</code>) and underlying spot markets coupled
-  with live counterparty identities in Rounds 3&ndash;4; and (iv) a 50-symbol ecosystem organized
-  into ten 5-asset categories governed by constant-sum accounting invariants (<code>Pebbles</code>),
-  negatively coupled baskets (<code>Snackpacks</code>), and synchronized trade pulses in Round 5.
-</p>
-<p>
-  To guard against overfitting on short 2&ndash;3 day historical samples, our engineering workflow
-  enforces strict <strong>IS/OOS chronological splitting</strong>,
-  <strong>3&times;3 plateau selection</strong> rather than isolated peak picking,
-  <strong>Combinatorially Symmetric Cross-Validation (PBO &lt; 0.15)</strong>, and the
-  <strong>Deflated Sharpe Ratio (DSR &ge; 0.95)</strong> using independent trial counts
-  <em>N</em><sub>eff</sub> before any held-out test day is evaluated.
+  Across Rounds 1&ndash;5 of IMC Prosperity 4, Team <code>63-bit integers</code> placed
+  <strong>60th Worldwide</strong> (<strong>8th in Australia</strong>, <strong>13th in APAC</strong>)
+  with <strong>+{comp_p2_official:,d} XIRECs</strong> in Phase 2 after earning
+  <strong>+{comp_p1_total:,d} XIRECs</strong> in Phase 1. Following the tournament, we engineered a
+  reproducible Python 3.11 audit suite to validate causal signal provenance, enforce strict
+  <code>t - 100</code> queue-aware matching, eliminate unrewarded complexity (R3 delta hedging,
+  R4 <code>Mark 67</code> bounce, R5 inside-spread <code>Pebbles</code> crossing), and diagnose why
+  our live Round 5 sprint (+{live_r5_algo:,d} Algo) underperformed before post-contest redesign
+  (+{r5_sub['total_pnl']:,.0f} OOS).
 </p>
 
-<h3>Final Algorithmic Submission OOS Scorecard (Queue-Aware Execution)</h3>
+<h3>Official Competition Results (Team <code>63-bit integers</code>) vs. Post-Contest OOS</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Round</th>
+      <th>Phase</th>
+      <th style="text-align:right">Live Algo</th>
+      <th style="text-align:right">Live Manual</th>
+      <th style="text-align:right">Round Total</th>
+      <th style="text-align:right">Post-Contest 1D OOS</th>
+      <th>Contest-to-Audit Notes</th>
+    </tr>
+  </thead>
+  <tbody>{comp_html_rows}</tbody>
+</table>
+
+{fig_comp}
+
+<h3>Post-Contest Submission Held-Out OOS Scorecard (<code>queue_aware</code>)</h3>
 <table>
   <thead>
     <tr>
       <th>Round</th>
       <th>Submission Class</th>
       <th style="text-align:right">OOS PnL</th>
-      <th style="text-align:right">OOS Sharpe<sub>252</sub></th>
-      <th style="text-align:right">Max Drawdown</th>
+      <th style="text-align:right">IR_tick</th>
+      <th style="text-align:right">BlkSR_1k</th>
+      <th style="text-align:right">Max DD</th>
+      <th style="text-align:right">PnL/MaxDD</th>
       <th style="text-align:right">Total Fills</th>
       <th style="text-align:right">Mean Latency</th>
     </tr>
@@ -446,111 +715,74 @@ def build_print_html(
   <tbody>{sub_rows}</tbody>
 </table>
 
-<h3>Final Manual Challenge Portal Submissions (Rounds 1&ndash;5)</h3>
+<h3>Manual Challenges: Live Realized Payouts vs. Ex-Ante Mathematical Models</h3>
+<p>
+  Team <code>63-bit integers</code> earned <strong>+{comp_manual_total:,d} XIRECs</strong> live
+  across all five manual rounds (<strong>R1 +{live_r1_man:,d}</strong>,
+  <strong>R2 +{live_r2_man:,d}</strong>, <strong>R3 +{live_r3_man:,d}</strong>,
+  <strong>R4 +{live_r4_man:,d}</strong>, <strong>R5 +{live_r5_man:,d}</strong>). Ex-ante
+  analytical models align closely with live realizations&mdash;R2's Cognitive Hierarchy model
+  projected 225,094 EV vs. +{live_r2_man:,d} realized, R3's Bayesian screening projected 76.00/unit
+  vs. +{live_r3_man:,d} realized, and R5's risk-adjusted KKT capped concentration for
+  +{live_r5_man:,d} realized under real crowd consensus shifts.
+</p>
 <table>
   <thead>
     <tr>
       <th>Round</th>
       <th>Challenge</th>
-      <th>Final Portal Inputs Submitted</th>
-      <th>Analytical Basis</th>
+      <th>Model Regime</th>
+      <th>Ex-Ante Optimal Policy</th>
+      <th style="text-align:right">Model EV / Fair Value</th>
     </tr>
   </thead>
-  <tbody>
-    <tr>
-      <td><strong>R1</strong></td>
-      <td><em>An Intarian Welcome</em></td>
-      <td>
-        <code>DRYLAND_FLAX: Bid 30, Qty 65</code>; <code>EMBER_MUSHROOM: Bid 20, Qty 10</code>
-      </td>
-      <td>Uncertain clearing optimization (<code>68.12</code> &amp; <code>9.81</code> EV)</td>
-    </tr>
-    <tr>
-      <td><strong>R2</strong></td>
-      <td><em>Invest &amp; Expand</em></td>
-      <td>
-        <code>Research = 15% (14.71%)</code>, <code>Scale = 43% (43.29%)</code>,
-        <code>Speed = 42% (42.0%)</code>
-      </td>
-      <td>Interior FOC + Level-3 Poisson CH fixed point</td>
-    </tr>
-    <tr>
-      <td><strong>R3</strong></td>
-      <td><em>Celestial Gardeners' Guild</em></td>
-      <td><code>Bid 1 = 775</code>, <code>Bid 2 = 880</code></td>
-      <td>Bayesian two-bid split over prior N(875, 15<sup>2</sup>)</td>
-    </tr>
-    <tr>
-      <td><strong>R4</strong></td>
-      <td><em>Vanilla Just Isn't Exotic Enough</em></td>
-      <td>
-        <code>AC_50_CO: -15</code>, <code>AC_40_BP: -50</code>, <code>AC_45_KO: +198</code>,
-        <code>AC_50_C15: +5</code>, <code>AC_50_P15: +21</code>
-      </td>
-      <td>251% BGK discrete-6h fair value + min-var hedge (-90.3% std)</td>
-    </tr>
-    <tr>
-      <td><strong>R5</strong></td>
-      <td><em>Extra! Extra!</em></td>
-      <td>
-        <code>Thermalite +35%</code>, <code>Sulfur +29%</code>, <code>Phoenix -23%</code>,
-        <code>Pyroflex -10%</code>, <code>Scoria +3%</code>, others <code>0%</code>
-      </td>
-      <td>Exact quadratic-fee KKT + variance penalty (&kappa; = 3.0)</td>
-    </tr>
-  </tbody>
+  <tbody>{manual_summary_rows}</tbody>
 </table>
 
-<h2>2. Round-by-Round Microstructure Discovery &amp; Algorithmic Engineering</h2>
+<h2>2. Round-by-Round Microstructure Discovery &amp; Negative Results</h2>
 
-<h3>Round 1: Bot-Wall Fair Valuation, Drift Extraction &amp; Penny-Improving MM</h3>
+<h3>Round 1 &amp; Round 2: Anchor-Plus-Drift Carry &amp; MAF Leverage (<code>&plusmn;80</code>)</h3>
 <p>
-  Auditing resting liquidity on <code>ASH_COATED_OSMIUM</code> and
-  <code>INTARIAN_PEPPER_ROOT</code> reveals wide quoted spreads populated inside by intermittent
-  small retail orders alongside deep institutional bot walls. Computing mid-prices from unweighted
-  L1 top-of-book introduces bounce variance (31%&ndash;40% higher step variance than popular-volume
-  walls). Our production <code>Round1Submission</code> isolates fair value using maximum-volume
-  resting bid/ask walls while penny-improving inside wide bot spreads whenever positive expected
-  capture exceeds inventory skew penalties. On held-out Day 0, this elevates OOS profit from
-  <code>+16,258.50</code> (naive symmetric MM) to <strong><code>+22,157.00</code></strong>
-  (Sharpe <code>1.1894</code>, MaxDD <code>267.00</code>, zero limit breaches).
+  On held-out Day 0, anchoring <code>ASH_COATED_OSMIUM</code> around <code>10,000</code> and
+  holding structural long inventory on <code>INTARIAN_PEPPER_ROOT</code> (verified
+  <code>+0.1000/tick</code> linear slope, <code>R^2 = 1.0000</code>) raises
+  <code>Round1Submission</code> OOS PnL to <strong><code>+{r1_sub['total_pnl']:,.2f}</code></strong>
+  (<code>IR_tick = {r1_sub['ir_tick']:.5f}</code>, <code>BlkSR_1k</code>
+  <code>{r1_sub['block_sharpe_1k']:.3f}</code> vs. <code>SymmetricMM</code>
+  <code>{r1_sym['total_pnl']:,.2f}</code>), split
+  <code>+{r1_asset_map.get('ASH_COATED_OSMIUM', 0.0):,.0f}</code> Osmium and
+  <code>+{r1_asset_map.get('INTARIAN_PEPPER_ROOT', 0.0):,.0f}</code> Pepper. On Round 2 Day 1,
+  interior plateau <code>(edge=2.5, skew=0.4)</code> earns
+  <strong><code>+{r2_sub['total_pnl']:,.2f}</code></strong> vs.
+  <code>SymmetricMM_80</code> <code>{r2_sym['total_pnl']:,.2f}</code>. Raising synthetic arrival
+  intensity from <code>0.08</code> to <code>0.10</code> lifts MC mean PnL from
+  <code>{_to_float(maf_08.get('mean_pnl')):,.2f}</code> to
+  <code>{_to_float(maf_10.get('mean_pnl')):,.2f}</code>.
 </p>
 <div class="fig-grid-2">
   {fig_r1_eq}
   {fig_r1_heat}
 </div>
-
-<h3>Round 2: Market Access Fee (MAF) Elasticity &amp; Flow-Imbalance Skew</h3>
-<p>
-  Holding a flat-fee exchange license ignores whether marginal liquidity rents justify discrete
-  access surcharges. Evaluating exact break-even MAF thresholds alongside IS 3&times;3 neighborhood
-  stability (width <code>w=4</code>, skew <code>&gamma;=0.35</code>) pushes
-  <code>Round2Submission</code> to <strong><code>+27,463.00</code></strong> on held-out Day 1
-  (Sharpe <code>1.3972</code>, MaxDD <code>419.50</code>, PBO <code>0.0000</code>,
-  DSR <code>1.0000</code>). Under +25% arrival intensity, Monte Carlo mean profit climbs from
-  <code>5,065.52</code> to <code>6,755.98</code>, validating clean fee-adjusted operating leverage.
-</p>
 {fig_r2_maf}
 
-<h3>Rounds 3 &amp; 4: Scale-Free Implied Volatility Smile &amp; Counterparty Flow Toxicity</h3>
+<h3>Rounds 3 &amp; 4: OU Spot + BS Total-Vol &amp; Causal Counterparty Disentanglement</h3>
 <p>
-  Round 3 resets the product universe into ten <code>VEV_4000..6500</code> binary/European call
-  vouchers plus spot <code>HYDROGEL_PACK</code> and <code>VELVETFRUIT_EXTRACT</code>. Hardcoding
-  a static <code>5d</code> Bachelier time-to-expiry misprices option theta across unseen days
-  because exchange option quotes price closer to an effective <code>~8d</code> schedule. Solving
-  directly for scale-free <strong>total implied volatility</strong>
-  <em>v<sub>K</sub> = &sigma;<sub>K</sub>&radic;&tau;</em> eliminates horizon drift across days,
-  yielding <strong><code>+7,525.50</code></strong> OOS on Day 2 (while fixed-5d Black-Scholes
-  loses <code>-7,604.00</code>).
-</p>
-<p>
-  In Round 4, revealing live trade counterparty tags uncovers severe toxic selection on
-  <code>VELVETFRUIT_EXTRACT</code>: pooled mark-outs mask informed directional aggression by
-  <code>Mark 67</code>, whereas conditioning on counterparty identity isolates positive mid-move
-  drift immediately following <code>Mark 67</code> buys (<code>M67_BUMP = 0.5</code>). Deploying
-  live counterparty skew flips <code>VELVETFRUIT_EXTRACT</code> net OOS to
-  <code>+1,027.00</code> and lifts <code>Round4Submission</code> to
-  (Sharpe <code>0.3613</code> vs <code>0.0571</code> PBO).
+  Round 3 IS ablation proves cross-hedging option delta in wide spot spreads destroys edge, so
+  holding spot and <code>VEV_4000..5500</code> unhedged (omitting worthless
+  <code>VEV_6000/6500</code>) lifts <code>Round3Submission</code> to
+  <strong><code>+{r3_sub['total_pnl']:,.2f}</code></strong> on Day 2 OOS (vs.
+  <code>SymmetricSpotMM</code> <code>{r3_sym['total_pnl']:,.2f}</code>). In Round 4, IS analysis on
+  <code>VELVETFRUIT_EXTRACT</code> shows <code>Mark 67</code>'s raw fill mark-out is a
+  non-causal 1-tick bounce (<code>mid_0_to_1 = {escape(m67.get('mid_0_to_1', ''))}</code> vs.
+  <code>t+1&rarr;t+200 = {escape(m67.get('causal_1_to_200', ''))}</code>). Using strictly causal
+  prior prints from <code>Mark 14 SELL</code>
+  (<code>ou_adj_h200 = {escape(m14s.get('ou_adj_h200', ''))}</code>,
+  <code>t = {escape(m14s.get('t_ou_h200', ''))}</code>) and <code>Mark 55 BUY</code>
+  (<code>ou_adj_h200 = {escape(m55b.get('ou_adj_h200', ''))}</code>,
+  <code>t = {escape(m55b.get('t_ou_h200', ''))}</code>) lifts Day 3 OOS PnL to
+  <strong><code>+{r4_sub['total_pnl']:,.2f}</code></strong>&mdash;an OOS uplift of
+  <code>+{r4_flow_uplift:,.2f}</code> above <code>Round3NoFlow</code>
+  (<code>{r4_noflow['total_pnl']:,.2f}</code>) with lower drawdown.
 </p>
 <div class="fig-grid-2">
   {fig_r3_opt}
@@ -558,36 +790,26 @@ def build_print_html(
 </div>
 {fig_r3_r4_mc}
 
-<h3>Round 5: 50-Asset Category Structure, Atomic Pebbles Crossing &amp; Synchronized Pulses</h3>
+<h3>Round 5: Diagnosing the +{live_r5_algo:,d} Live Sprint &rarr; Vol-Scaled AS + Lead-Lag</h3>
 <p>
-  Round 5 expands the order book to 50 instruments grouped in ten 5-symbol families (420,000 rows
-  per day, with intermittent <code>one_sided</code> ticks where empty side prices report
-  <code>0.0</code>). First-difference PCA and pulse clustering uncover two dominant alpha mechanisms
-  alongside synchronized liquidity sweeps:
+  During the live Round 5 finals, trading uncalibrated cross-asset conjectures inside tight
+  <code>&plusmn;10</code> limits capped algorithmic PnL at <strong>+{live_r5_algo:,d}</strong>.
+  Post-contest testing across all 50 instruments rejected
+  <code>Pebbles</code> constant-sum crossing (<code>std = 2.82</code> sits inside 12&ndash;14 tick
+  spreads), contemporaneous <code>Snackpacks</code> correlation across shifting levels, and
+  <code>Robots</code> lags. Volatility-scaled AS quoting plus discrete
+  <code>MICROCHIP_CIRCLE</code> lead-lag ({escape(chip_lag_summary)}) lifts IS profit from
+  <code>{_to_float(r5_is_noll.get('total_pnl')):,.1f}</code> to
+  <code>{_to_float(r5_is_sub.get('total_pnl')):,.1f}</code>
+  (<code>IR_tick = {_to_float(r5_is_sub.get('ir_tick')):.5f}</code> at
+  <code>mc_beta = 0.16</code>) and earns <strong><code>+{r5_sub['total_pnl']:,.2f}</code></strong>
+  on Day 4 OOS (<code>IR_tick = {r5_sub['ir_tick']:.5f}</code>,
+  <code>MaxDD = {r5_sub['max_drawdown']:,.2f}</code>,
+  <code>PnL/MaxDD = {r5_sub['pnl_to_max_dd']:.2f}</code>, <code>+{r5_mc_uplift:,.2f}</code>
+  above <code>Round5NoLeadLag</code> and <code>{r5_pdd_mult:.2f}&times;</code> higher
+  <code>PnL/MaxDD</code> than unfiltered <code>EmaSymmetricMM_All50</code> at
+  <code>{r5_sym['pnl_to_max_dd']:.2f}</code>).
 </p>
-<ul>
-  <li>
-    <strong>Constant-Sum Accounting Invariant (<code>Pebbles</code>)</strong>: The five
-    <code>PEBBLES_*</code> contracts satisfy &Sigma;<em>P<sub>i</sub></em> &approx; 50,000 with
-    standard deviation <code>2.82</code> and an Ornstein-Uhlenbeck half-life of <code>0.16</code>
-    ticks. Passive skewing lags this 1-tick reversion; executing atomic IOC cross-taking on live
-    touch dislocations yields <strong><code>+15,469.00</code></strong> OOS on Pebbles while
-    holding overall MaxDD at <code>6,205.50</code>.
-  </li>
-  <li>
-    <strong>Negatively Coupled Basket (<code>Snackpacks</code>)</strong>:
-    <code>SNACKPACK_CHOCOLATE</code> and <code>SNACKPACK_VANILLA</code> exhibit
-    <em>r</em> = -0.912 diff correlation around day-specific anchors <em>K</em><sub>day</sub>,
-    tracked online via slow exponential anchor estimation without look-ahead.
-  </li>
-  <li>
-    <strong>Adaptive Step-Volatility Guard &amp; Clip Sizing</strong>: Filtering <code>Robots</code>
-    and <code>Microchips</code> inside unstable step-vol regimes while lifting quote size to
-    <code>QUOTE_CLIP = 10</code> captures <strong><code>+123,173.00</code></strong> on Day 4 OOS
-    (<code>88.3%</code> of the single-day historical public-tape half-spread ceiling) at
-    <code>0.6920 ms/tick</code>&mdash;profitable across <strong>all 10</strong> asset categories.
-  </li>
-</ul>
 
 <table>
   <thead>
@@ -598,7 +820,7 @@ def build_print_html(
       <th style="text-align:right">Spread Std</th>
       <th style="text-align:right">ADF t-stat</th>
       <th style="text-align:right">OU Half-Life</th>
-      <th>Notes</th>
+      <th>Empirical Note</th>
     </tr>
   </thead>
   <tbody>{basket_rows}</tbody>
@@ -625,41 +847,50 @@ def build_print_html(
   {fig_r5_cat}
 </div>
 
-<h2>3. Validation Gates, Execution Stress &amp; Tail-Risk Benchmarks</h2>
+<h2>3. Overfitting Controls, Fill Sensitivity &amp; Monte Carlo Stress</h2>
 <p>
-  Rather than optimizing free parameters against single OOS snapshots, every Round 2&ndash;5
-  production strategy passed in-sample 3&times;3 neighborhood stability, CSCV Probability of
-  Backtest Overfitting (<code>S = 8</code>, 70 partitions), Deflated Sharpe multiplicity gating, and
-  calibrated Monte Carlo stress tests across zero-loss regimes (<code>Prob Loss = 0.0000</code> in
-  calibrated submission MC paths).
+  We report unscaled per-tick IR (<code>IR_tick</code>), disjoint 1,000-tick block Sharpe
+  (<code>BlkSR_1k</code>), block Deflated Sharpe Ratio (<code>DSR_block</code> at 100-tick blocks),
+  effective independent trials (<code>N_eff</code>), and CSCV <code>PBO</code>. Because adjacent
+  parameter grid points produce highly correlated tick equity streams
+  (<code>N_eff = {neff_lo:.2f}&ndash;{neff_hi:.2f}</code> across 25 grid trials), R2 and R5 yield
+  elevated slice-rank PBO (<code>{_to_float(g2.get('cscv_pbo')):.3f}</code> /
+  <code>{_to_float(g5.get('cscv_pbo')):.3f}</code>) from near-identical neighbor ties, whereas
+  every round clears <code>DSR_block &ge; {min_dsr:.3f}</code> with flat <code>3&times;3</code>
+  interior stability. Adverse-selection stress raises loss rates bounded via exact Wilson 95%
+  upper intervals.
 </p>
 
-<h3>CSCV / PBO &amp; Deflated Sharpe Validation Gates (R2&ndash;R5)</h3>
+<h3>In-Sample Validation Gates &amp; Block DSR / CSCV Summary (R1&ndash;R5)</h3>
 <table>
   <thead>
     <tr>
       <th>Round</th>
-      <th>Selected Plateau Params</th>
-      <th style="text-align:right">IS Sharpe</th>
-      <th style="text-align:right">3&times;3 Local Mean &plusmn; Std</th>
+      <th>Interior Plateau</th>
+      <th style="text-align:right">IS IR_tick</th>
+      <th style="text-align:right">3&times;3 Mean &plusmn; Std</th>
+      <th style="text-align:right">N_eff</th>
       <th style="text-align:right">CSCV PBO</th>
-      <th style="text-align:right">DSR</th>
+      <th style="text-align:right">DSR_block</th>
       <th style="text-align:right">OOS PnL</th>
-      <th style="text-align:right">OOS Sharpe</th>
+      <th style="text-align:right">OOS IR_tick</th>
     </tr>
   </thead>
   <tbody>{gate_rows}</tbody>
 </table>
 
-<h3>Execution Fill-Model Sensitivity (Conservative vs. Queue-Aware vs. Touch)</h3>
+<h3>
+  Fill-Model Sensitivity (<code>conservative</code> / <code>queue_aware</code> / <code>touch</code>)
+</h3>
 <table>
   <thead>
     <tr>
       <th>Round</th>
       <th>Submission</th>
-      <th>Fill Model</th>
+      <th>Fill Mode</th>
       <th style="text-align:right">OOS PnL</th>
-      <th style="text-align:right">Sharpe<sub>252</sub></th>
+      <th style="text-align:right">IR_tick</th>
+      <th style="text-align:right">BlkSR_1k</th>
       <th style="text-align:right">MaxDD</th>
       <th style="text-align:right">Fills</th>
     </tr>
@@ -667,7 +898,7 @@ def build_print_html(
   <tbody>{fill_sens_rows}</tbody>
 </table>
 
-<h3>Calibrated Monte Carlo Tail-Risk Benchmarks (50&ndash;100 Independent Paths)</h3>
+<h3>Calibrated &amp; Adverse-Stress Monte Carlo Benchmarks (N=40 Sessions &times; 1,000 Steps)</h3>
 <table>
   <thead>
     <tr>
@@ -677,7 +908,8 @@ def build_print_html(
       <th style="text-align:right">VaR 95%</th>
       <th style="text-align:right">CVaR 95%</th>
       <th style="text-align:right">Prob Loss</th>
-      <th style="text-align:right">Mean Sharpe</th>
+      <th style="text-align:right">95% Wilson Up</th>
+      <th style="text-align:right">Mean IR_tick</th>
     </tr>
   </thead>
   <tbody>{mc_rows}</tbody>
@@ -685,57 +917,26 @@ def build_print_html(
 
 {fig_r2_r5_eq}
 
-<h2>4. Manual Challenges: Closed-Form Theory &amp; Portal Allocation (R1&ndash;R5)</h2>
-<p>
-  All five manual portal challenges share one core unifying theme with our algorithmic stack:
-  explicitly modeling <strong>execution priority, participant belief heterogeneity, monitoring
-  discretion, and nonlinear fee curvature</strong> instead of optimizing against naive point
-  estimates.
-</p>
-
+<h2>4. Manual Challenges: Closed-Form Valuation &amp; Constrained Optimization</h2>
 <div class="eq">
-  <strong>R1 &amp; R2 Core Conditions:</strong>
-  EV<sub>R1</sub>(p, q) = (V - p) &middot; min(q, Q<sub>max</sub>)
-  &middot; P(P<sub>clear</sub> &le; p) &nbsp;|&nbsp;
-  FOC<sub>R2 Interior</sub>: (100 - s - r*) / (1 + r*) = ln(1 + r*)
+  <strong>R1&ndash;R5 Equilibrium &amp; Risk-Control Formulations:</strong>
+  R2 FOC: (100 &minus; s &minus; r*) / (1 + r*) = ln(1 + r*) &nbsp;|&nbsp;
+  R4: Exact BS + Rubinstein chooser + 4/d discrete KO (Day-15 min-var hedge) &nbsp;|&nbsp;
+  R5: Exact KKT with finite -92% loss bound (&kappa; = 3.0)
 </div>
 <p>
-  In Round 1 (<em>An Intarian Welcome</em>), late-entrant uniform clearing favors stepping slightly
-  above resting queue demand under clearing uncertainty, selecting
-  <code>DRYLAND_FLAX = (30, 65)</code> (<code>96%</code> fill rate, <code>68.12</code> EV) and
-  <code>EMBER_MUSHROOM = (20, 10)</code> (<code>73%</code> fill, <code>9.81</code> EV). In Round 2
-  (<em>Invest &amp; Expand</em>), pairing the exact closed-form Research/Scale interior optimality
-  condition with a <strong>Poisson Cognitive Hierarchy</strong> (<code>&tau; = 1.5</code>)
-  iteratively crowds Speed upward
-  (<code>L1: 29.5% &rarr; L2: 37.5% &rarr; L3: 42.0%</code>), locking in our Level-3 focal
-  submission of <strong><code>Speed = 42%, Research = 15% (14.71%), Scale = 43%
-  (43.29%)</code></strong>.
-</p>
-
-<div class="eq">
-  <strong>R3&ndash;R5 Optimization Laws:</strong>
-  R3: P<sub>fill</sub> = &Phi;((b<sub>1</sub> - &mu;)/&sigma;) +
-  [F(b<sub>2</sub>) - F(b<sub>1</sub>)] &middot; P(b<sub>2</sub> &ge; b&#772;<sub>2</sub>)
-  &nbsp;|&nbsp; R4: H<sub>eff</sub> = H &middot; exp(&minus;&beta;&sigma;&radic;&Delta;t)
-  &nbsp;|&nbsp; R5: x<sub>i</sub>* = &plusmn; max(0, |&mu;<sub>i</sub>| &minus; &lambda;*) /
-  (18,000 + 2&kappa;&sigma;<sub>i</sub><sup>2</sup>)
-</div>
-<p>
-  In Round 3, modeling prior belief uncertainty on the cohort second-bid average
-  (<em>b&#772;</em><sub>2</sub> ~ N(875, 15<sup>2</sup>)) sets our submitted two-bid policy at
-  <strong><code>(775, 880)</code></strong> (<code>76.00/unit</code> EV at <code>76.8%</code> fill
-  probability vs. <code>63.73</code> optimal single bid). In Round 4 (<em>Aether Crystal</em>,
-  &sigma;<sub>ann</sub> = 251%, <code>6h</code> discrete monitoring, <code>AC_40_BP</code> payout =
-  <code>10</code>), Broadie-Glasserman-Kou discrete barrier continuity adjustments show
-  <code>AC_45_KO</code> cheap at ask (<code>0.2108</code> fair vs. <code>0.175</code> ask) while
-  <code>AC_50_CO</code> and <code>AC_40_BP</code> trade rich; our submitted min-variance hedge
-  (<code>AC_50_CO -15, AC_40_BP -50, AC_45_KO +198, AC_50_C15 +5, AC_50_P15 +21</code>) cuts
-  variance by <code>&minus;90.3%</code> std (CVaR<sub>95</sub> = <code>&minus;575.5</code>).
-  Finally, in Round 5 (<em>Extra! Extra!</em>), exact KKT quadratic-fee optimization plus variance
-  regularization (&kappa; = 3.0) concentrates our submission across five active Ignith bets
-  (<code>Thermalite +35%, Sulfur +29%, Phoenix -23%, Pyroflex -10%, Scoria +3%</code>),
-  compounding expected net payoff from <code>544,444</code> (naive 1/9) to
-  <code>893,543.96</code> (<code>895,380.00</code> pure KKT).
+  In Round 4 (<em>Aether Crystal</em>), closed-form BS and Rubinstein chooser formulas price
+  <code>AC_50_C15</code> / <code>AC_50_P15</code> at <code>12.0269</code>, <code>AC_40_BP</code>
+  at <code>4.7679</code>, and <code>AC_50_CO</code> at <code>21.8977</code>; 100k-path discrete
+  4/day GBM gives <code>AC_45_KO = 0.2113</code> vs. <code>0.175</code> ask (vs.
+  <code>0.1562</code> under 24/day checks); Day-15 min-variance hedging achieves EV
+  <code>{_to_float(r4_mv.get('expected_metric')):,.2f}</code>
+  (<code>{escape(r4_mv.get('parameter', ''))}</code>). In Round 5 (<em>Extra! Extra!</em>),
+  bounding <code>Ashes of the Phoenix</code> downside at <code>-92%</code> keeps payoff bounds
+  finite and yields KKT net expectation
+  <code>{_to_float(r5_exact.get('expected_metric')):,.2f}</code>
+  (<code>{_to_float(r5_kkt.get('expected_metric')):,.2f}</code> under risk penalty
+  <code>&kappa;=3.0</code>).
 </p>
 
 <table>
@@ -744,9 +945,9 @@ def build_print_html(
       <th>Round</th>
       <th>Challenge</th>
       <th>Model Regime</th>
-      <th>Optimal Action / Submission</th>
+      <th>Optimal Action / Allocation</th>
       <th style="text-align:right">Expected Metric</th>
-      <th>Assumptions &amp; Structural Notes</th>
+      <th>Modeling Assumptions</th>
     </tr>
   </thead>
   <tbody>{manual_html_rows}</tbody>

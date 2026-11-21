@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 import time
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Protocol
 
 from prosperity_toolkit.competition.datamodel import (
@@ -97,10 +100,25 @@ class CompetitionStrategyAdapter(BaseStrategy):
 
     def generate_orders(self, state: MarketStateSnapshot) -> list[OrderRequest]:
         """Translate MarketStateSnapshot to TradingState, invoke Trader.run, and convert orders."""
+        own_trades: dict[str, list[Trade]] = {
+            sym: [
+                Trade(
+                    symbol=tp.symbol,
+                    price=tp.price,
+                    quantity=tp.quantity,
+                    buyer=tp.buyer,
+                    seller=tp.seller,
+                    timestamp=tp.timestamp,
+                )
+                for tp in prints
+            ]
+            for sym, prints in state.own_trades.items()
+        }
         trading_state = CompetitionStateAdapter.to_trading_state(
             snapshot=state,
             trader_data=self.trader_data,
             listings=self.listings,
+            own_trades=own_trades,
         )
 
         t0 = time.perf_counter()
@@ -135,3 +153,32 @@ class CompetitionStrategyAdapter(BaseStrategy):
         if not self.latencies_ms:
             return 0.0
         return sum(self.latencies_ms) / len(self.latencies_ms)
+
+
+def load_competition_trader(
+    submission_path: Path,
+    **kwargs: Any,
+) -> CompetitionTraderProtocol:
+    """Dynamically load a standalone ``Trader`` instance from a submission script."""
+    resolved = submission_path.resolve()
+    traders_dir = (
+        resolved.parents[1]
+        if len(resolved.parents) >= 2 and (resolved.parents[1] / "datamodel.py").exists()
+        else Path("traders").resolve()
+    )
+    if traders_dir.exists() and str(traders_dir) not in sys.path:
+        sys.path.insert(0, str(traders_dir))
+    mod_name = f"loaded_{resolved.parent.name}_{resolved.stem}"
+    spec = importlib.util.spec_from_file_location(mod_name, resolved)
+    if spec is None or spec.loader is None:
+        msg = f"Unable to load submission module from {resolved}"
+        raise ImportError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    trader_cls = getattr(module, "Trader", None)
+    if trader_cls is None:
+        msg = f"Submission module {resolved} does not define a Trader class."
+        raise AttributeError(msg)
+    trader: CompetitionTraderProtocol = trader_cls(**kwargs)
+    return trader
+

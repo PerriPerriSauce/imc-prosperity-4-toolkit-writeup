@@ -19,7 +19,6 @@ from prosperity_toolkit.analysis import (
     bachelier_call_delta,
     classify_trade_flow,
     compute_pca_spectrum,
-    compute_return_moments,
     detect_trade_pulses,
     estimate_linear_drift,
     estimate_ou_ar1,
@@ -61,11 +60,21 @@ def analyze_round2(loader: DataLoader) -> list[dict[str, object]]:
             rep = summarize_order_book(p_df, sym)
             mid = extract_two_sided_mid(p_df, sym)
             mid_arr = mid.to_numpy(dtype=np.float64)
-            step_idx = np.arange(len(mid_arr), dtype=np.float64)
-            moms = compute_return_moments(mid_arr, lags=(1, 2))
+            # Regress against actual elapsed tick index (100 timestamp units = 1 tick)
+            # so dropped one-sided ticks do not inflate drift estimates.
+            tick_idx = mid.index.to_numpy(dtype=np.float64) / 100.0
+            ts_vals = mid.index.to_numpy(dtype=np.int64)
+            contig_mask = np.diff(ts_vals) == 100
+            contig_diffs = np.diff(mid_arr)[contig_mask]
+            dmid_std = float(np.std(contig_diffs, ddof=1)) if contig_diffs.size > 1 else 0.0
+            acf1 = (
+                float(np.corrcoef(contig_diffs[:-1], contig_diffs[1:])[0, 1])
+                if contig_diffs.size > 2 and np.std(contig_diffs) > 0
+                else 0.0
+            )
             adf = augmented_dickey_fuller_test(mid_arr, lags=1)
             ou = estimate_ou_ar1(mid_arr)
-            slope, _, r2_lin = estimate_linear_drift(step_idx, mid_arr)
+            slope, _, r2_lin = estimate_linear_drift(tick_idx, mid_arr)
             obis = evaluate_obi_signal(p_df, sym, horizons=(1, 5, 10))
             obi1 = obis[0]
             obi10 = obis[2]
@@ -83,8 +92,8 @@ def analyze_round2(loader: DataLoader) -> list[dict[str, object]]:
                 "mid_mean": round(rep.mid_mean, 2),
                 "mid_std": round(rep.mid_std, 2),
                 "spread_med": round(rep.spread_median, 2),
-                "dmid_std": round(moms["std"], 4),
-                "acf1": round(moms["acf_lag_1"], 4),
+                "dmid_std": round(dmid_std, 4),
+                "acf1": round(acf1, 4),
                 "adf_t": round(adf.t_statistic, 2),
                 "ou_theta": round(ou.theta, 4),
                 "half_life": round(ou.half_life, 2) if np.isfinite(ou.half_life) else None,
@@ -120,27 +129,22 @@ def analyze_round3_round4_options(loader: DataLoader) -> list[dict[str, object]]
     spot_d1 = extract_two_sided_mid(day_prices[(3, 1)], spot_sym)
 
     rows: list[dict[str, object]] = []
-    # 1. Spot & HYDROGEL_PACK characterization
+    # 1. Spot & HYDROGEL_PACK characterization (per-day differences, never cross-day jumps)
     for sym in ("HYDROGEL_PACK", spot_sym):
         is_rep = summarize_order_book(is_prices, sym)
-        is_mid = pd.concat([
-            extract_two_sided_mid(day_prices[(3, 0)], sym),
-            extract_two_sided_mid(day_prices[(3, 1)], sym),
-        ])
-        moms = compute_return_moments(is_mid.to_numpy(dtype=np.float64), lags=(1,))
-        adf_d0 = augmented_dickey_fuller_test(
-            extract_two_sided_mid(day_prices[(3, 0)], sym).to_numpy(dtype=np.float64),
-        )
-        ou_d0 = estimate_ou_ar1(
-            extract_two_sided_mid(day_prices[(3, 0)], sym).to_numpy(dtype=np.float64),
-        )
+        m_d0 = extract_two_sided_mid(day_prices[(3, 0)], sym).to_numpy(dtype=np.float64)
+        m_d1 = extract_two_sided_mid(day_prices[(3, 1)], sym).to_numpy(dtype=np.float64)
+        is_diffs = np.concatenate([np.diff(m_d0), np.diff(m_d1)])
+        sigma_diff = float(np.std(is_diffs, ddof=1)) if is_diffs.size > 1 else 0.0
+        adf_d0 = augmented_dickey_fuller_test(m_d0)
+        ou_d0 = estimate_ou_ar1(m_d0)
         rows.append({
             "symbol": sym,
             "strike": 0,
             "is_mid_mean": round(is_rep.mid_mean, 2),
             "is_mid_std": round(is_rep.mid_std, 2),
             "is_spread_mean": round(is_rep.spread_mean, 2),
-            "is_sigma_diff": round(moms["std"], 4),
+            "is_sigma_diff": round(sigma_diff, 4),
             "is_adf_t_d0": round(adf_d0.t_statistic, 2),
             "is_half_life_d0": round(ou_d0.half_life, 1) if np.isfinite(ou_d0.half_life) else None,
             "bid_minus_intr": None,
@@ -150,8 +154,8 @@ def analyze_round3_round4_options(loader: DataLoader) -> list[dict[str, object]]
             "bach_sigma_50k": None,
             "emp_delta_is": None,
             "bach_delta_50k": None,
-            "d0_mid": round(float(extract_two_sided_mid(day_prices[(3, 0)], sym).mean()), 2),
-            "d1_mid": round(float(extract_two_sided_mid(day_prices[(3, 1)], sym).mean()), 2),
+            "d0_mid": round(float(m_d0.mean()), 2),
+            "d1_mid": round(float(m_d1.mean()), 2),
             "d2_mid": round(float(extract_two_sided_mid(day_prices[(3, 2)], sym).mean()), 2),
             "d3_mid": round(float(extract_two_sided_mid(day_prices[(4, 3)], sym).mean()), 2),
             "is_trades": int(len(day_trades[(3, 0)][day_trades[(3, 0)]["symbol"] == sym]))
@@ -159,9 +163,12 @@ def analyze_round3_round4_options(loader: DataLoader) -> list[dict[str, object]]
             "seller_init_pct": None,
         })
 
-    # Realized spot step sigma on IS Days 0-1 for Bachelier benchmark
-    spot_is = pd.concat([spot_d0, spot_d1])
-    spot_sigma = float(np.std(np.diff(spot_is.to_numpy(dtype=np.float64)), ddof=1))
+    # Realized spot step sigma on IS Days 0-1 (within-day differences only)
+    spot_diffs = np.concatenate([
+        np.diff(spot_d0.to_numpy(dtype=np.float64)),
+        np.diff(spot_d1.to_numpy(dtype=np.float64)),
+    ])
+    spot_sigma = float(np.std(spot_diffs, ddof=1))
 
     # 2. All 10 VEV strikes (assuming 5 trading days remaining from R3 Day 0 -> 50k steps)
     is_joined_spot = pd.concat([
@@ -418,56 +425,89 @@ def analyze_round4_counterparties(loader: DataLoader) -> list[dict[str, object]]
 
     _write_csv(TABLE_DIR / "r4_counterparty_profiles.csv", records)
 
-    # Stratified VELVETFRUIT_EXTRACT mid-price move post-trade (separates alpha from spread mix)
+    # Strictly In-Sample (Days 1 & 2) VELVETFRUIT_EXTRACT markout decomposition:
+    # isolates pre-trade dip (t-1 -> t), 1-tick bounce (t -> t+1), causal drift (t+1 -> t+h),
+    # and OU-adjusted causal drift (controlling for reversion toward 5250). Never touches OOS Day 3.
     velvet_sym = "VELVETFRUIT_EXTRACT"
-    p_all = pd.concat(
-        [loader.load_day_prices(4, d).assign(d=d) for d in (1, 2, 3)],
+    p_is = pd.concat(
+        [loader.load_day_prices(4, d).assign(d=d) for d in (1, 2)],
         ignore_index=True,
     )
-    t_all = pd.concat(
-        [loader.load_day_trades(4, d).assign(d=d) for d in (1, 2, 3)],
+    t_is = pd.concat(
+        [loader.load_day_trades(4, d).assign(d=d) for d in (1, 2)],
         ignore_index=True,
     )
     v_map = (
-        p_all[p_all["product"] == velvet_sym]
+        p_is[p_is["product"] == velvet_sym]
         .set_index(["d", "timestamp"])["mid_price"]
         .to_dict()
     )
-    tv = t_all[t_all["symbol"] == velvet_sym]
+    tv = t_is[t_is["symbol"] == velvet_sym]
     vel_rows: list[dict[str, object]] = []
     for actor, side_col in [
         ("Mark 67", "buyer"),
         ("Mark 55", "buyer"),
         ("Mark 55", "seller"),
+        ("Mark 14", "buyer"),
+        ("Mark 14", "seller"),
         ("Mark 49", "seller"),
         ("Mark 01", "buyer"),
-        ("Mark 14", "buyer"),
     ]:
         sub_tr = tv[tv[side_col].fillna("") == actor]
-        moves: dict[int, list[float]] = {h: [] for h in horizons}
+        pre_moves: list[float] = []
+        bounce_moves: list[float] = []
+        causal_moves: dict[int, list[float]] = {h: [] for h in (5, 20, 50, 200)}
+        ou_res_200: list[float] = []
         for d_val, ts_val in zip(sub_tr["d"], sub_tr["timestamp"], strict=False):
-            m0 = v_map.get((int(d_val), int(ts_val)))
-            if m0 is None:
-                continue
-            for h in horizons:
-                mf = v_map.get((int(d_val), int(ts_val) + h * 100))
-                if mf is not None:
-                    moves[h].append(float(mf) - float(m0))
+            d_i, ts_i = int(d_val), int(ts_val)
+            mm1 = v_map.get((d_i, ts_i - 100))
+            m0 = v_map.get((d_i, ts_i))
+            mp1 = v_map.get((d_i, ts_i + 100))
+            if mm1 is not None and m0 is not None:
+                pre_moves.append(float(m0) - float(mm1))
+            if m0 is not None and mp1 is not None:
+                bounce_moves.append(float(mp1) - float(m0))
+            if mp1 is not None:
+                for h in (5, 20, 50, 200):
+                    mf = v_map.get((d_i, ts_i + h * 100))
+                    if mf is not None:
+                        causal_moves[h].append(float(mf) - float(mp1))
+                        if h == 200:
+                            ou_res_200.append(
+                                (float(mf) - float(mp1)) + 0.45 * (float(mp1) - 5250.0),
+                            )
+        ou_t = (
+            float(np.mean(ou_res_200) / (np.std(ou_res_200, ddof=1) / np.sqrt(len(ou_res_200))))
+            if len(ou_res_200) > 1 and np.std(ou_res_200, ddof=1) > 0
+            else 0.0
+        )
         vel_rows.append({
+            "split": "IS (Days 1-2)",
             "counterparty": actor,
             "side": side_col,
-            "n_trades": len(sub_tr),
-            "mid_move_h1": round(float(np.mean(moves[1])), 3) if moves[1] else None,
-            "mid_move_h5": round(float(np.mean(moves[5])), 3) if moves[5] else None,
-            "mid_move_h20": round(float(np.mean(moves[20])), 3) if moves[20] else None,
-            "mid_move_h50": round(float(np.mean(moves[50])), 3) if moves[50] else None,
+            "n_trades_is": len(sub_tr),
+            "mid_m1_to_0": round(float(np.mean(pre_moves)), 3) if pre_moves else None,
+            "mid_0_to_1": round(float(np.mean(bounce_moves)), 3) if bounce_moves else None,
+            "causal_1_to_5": round(float(np.mean(causal_moves[5])), 3) if causal_moves[5] else None,
+            "causal_1_to_20": (
+                round(float(np.mean(causal_moves[20])), 3) if causal_moves[20] else None
+            ),
+            "causal_1_to_50": (
+                round(float(np.mean(causal_moves[50])), 3) if causal_moves[50] else None
+            ),
+            "causal_1_to_200": (
+                round(float(np.mean(causal_moves[200])), 3) if causal_moves[200] else None
+            ),
+            "ou_adj_h200": round(float(np.mean(ou_res_200)), 3) if ou_res_200 else None,
+            "t_ou_h200": round(ou_t, 2),
         })
     _write_csv(TABLE_DIR / "r4_counterparty_velvet_midmoves.csv", vel_rows)
 
-    # Plot R4 Counterparty Flow & Mark-Out Curves
+    # Plot R4 Counterparty Flow, Mark-Out Curves & Causal VELVETFRUIT Decomposition
     df_rec = pd.DataFrame(records)
+    df_vel = pd.DataFrame(vel_rows)
     if not df_rec.empty:
-        fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.8))
+        fig, axes = plt.subplots(1, 3, figsize=(16.5, 4.8))
         is_sub = df_rec[df_rec["split"] == "IS"].sort_values("counterparty")
         oos_sub = df_rec[df_rec["split"] == "OOS"].set_index("counterparty")
 
@@ -490,11 +530,37 @@ def analyze_round4_counterparties(loader: DataLoader) -> list[dict[str, object]]
                 yo = [ro["markout_h1"], ro["markout_h5"], ro["markout_h20"], ro["markout_h50"]]
                 axes[1].plot(horizons, yo, linestyle=":", alpha=0.55)
         axes[1].axhline(0.0, color="#6c757d", linestyle="--", linewidth=1.2)
-        axes[1].set_title("Weighted Mid-Price Mark-Out by Horizon (IS Solid, OOS Dotted)")
+        axes[1].set_title("Weighted Mid Mark-Out from Fill (IS Solid, OOS Dotted)")
         axes[1].set_xlabel("Horizon (ticks)")
         axes[1].set_ylabel("Mark-Out (XIRECs)")
         axes[1].grid(True, linestyle="--", alpha=0.4)
-        axes[1].legend(fontsize=8, ncol=2)
+        axes[1].legend(fontsize=7.5, ncol=2)
+
+        if not df_vel.empty:
+            labels = [
+                f"{r['counterparty']}\n({r['side'][:1].upper()})"
+                for _, r in df_vel.iterrows()
+            ]
+            xv = np.arange(len(df_vel))
+            wv = 0.27
+            bounce = df_vel["mid_0_to_1"].fillna(0.0).to_numpy(dtype=float)
+            causal = df_vel["causal_1_to_200"].fillna(0.0).to_numpy(dtype=float)
+            ou_adj = df_vel["ou_adj_h200"].fillna(0.0).to_numpy(dtype=float)
+            axes[2].bar(xv - wv, bounce, width=wv, label="1-tick bounce (t->t+1)", color="#f4a261")
+            axes[2].bar(xv, causal, width=wv, label="Causal drift (t+1->t+200)", color="#264653")
+            axes[2].bar(
+                xv + wv,
+                ou_adj,
+                width=wv,
+                label="OU-adj drift (t+1->t+200)",
+                color="#2a9d8f",
+            )
+            axes[2].axhline(0.0, color="#6c757d", linestyle="--", linewidth=1.0)
+            axes[2].set_xticks(xv, labels, fontsize=8)
+            axes[2].set_title("VELVETFRUIT IS Decomposition: Bounce vs Causal Alpha")
+            axes[2].set_ylabel("Mid Move (XIRECs)")
+            axes[2].grid(True, axis="y", linestyle="--", alpha=0.4)
+            axes[2].legend(fontsize=7.5)
 
         fig.tight_layout()
         fig.savefig(FIG_DIR / "r4_counterparty_markouts.png", dpi=200)
@@ -532,20 +598,30 @@ def analyze_round5(loader: DataLoader) -> None:
             s_d3 = mid_d3[sym].to_numpy(dtype=np.float64)
             s_d4 = mid_d4[sym].to_numpy(dtype=np.float64)
 
-            is_diffs = np.concatenate([np.diff(s_d2), np.diff(s_d3)])
+            d2_diffs = np.diff(s_d2)
+            d3_diffs = np.diff(s_d3)
+            is_diffs = np.concatenate([d2_diffs, d3_diffs])
             is_sigma = float(np.std(is_diffs, ddof=1))
-            is_acf1 = compute_return_moments(
-                np.concatenate([s_d2, s_d3]),
-                lags=(1,),
-            )["acf_lag_1"]
+            lag1_x = np.concatenate([d2_diffs[:-1], d3_diffs[:-1]])
+            lag1_y = np.concatenate([d2_diffs[1:], d3_diffs[1:]])
+            is_acf1 = (
+                float(np.corrcoef(lag1_x, lag1_y)[0, 1])
+                if lag1_x.size > 1 and np.std(lag1_x) > 0 and np.std(lag1_y) > 0
+                else 0.0
+            )
             is_spr_med = float(pd.concat([spr_d2[sym], spr_d3[sym]]).median())
             adf_d2 = augmented_dickey_fuller_test(s_d2, lags=1)
             ou_d2 = estimate_ou_ar1(s_d2)
-            s_is_cat = np.concatenate([s_d2, s_d3])
-            slope_is, _, _ = estimate_linear_drift(
-                np.arange(len(s_is_cat), dtype=np.float64),
-                s_is_cat,
+            s_is_pooled = np.concatenate([s_d2, s_d3])
+            slope_d2, _, _ = estimate_linear_drift(
+                np.arange(len(s_d2), dtype=np.float64),
+                s_d2,
             )
+            slope_d3, _, _ = estimate_linear_drift(
+                np.arange(len(s_d3), dtype=np.float64),
+                s_d3,
+            )
+            slope_is = 0.5 * (slope_d2 + slope_d3)
 
             oos_sigma = float(np.std(np.diff(s_d4), ddof=1))
             adf_d4 = augmented_dickey_fuller_test(s_d4, lags=1)
@@ -557,8 +633,8 @@ def analyze_round5(loader: DataLoader) -> None:
             prod_rows.append({
                 "category": cat,
                 "symbol": sym,
-                "is_mid_mean": round(float(np.mean(s_is_cat)), 2),
-                "is_mid_std": round(float(np.std(s_is_cat, ddof=1)), 2),
+                "is_mid_mean": round(float(np.mean(s_is_pooled)), 2),
+                "is_mid_std": round(float(np.std(s_is_pooled, ddof=1)), 2),
                 "is_spread_med": round(is_spr_med, 1),
                 "is_sigma_diff": round(is_sigma, 3),
                 "is_spread_to_sigma": round(is_spr_med / is_sigma, 3) if is_sigma > 0 else 0.0,
@@ -720,6 +796,39 @@ def analyze_round5(loader: DataLoader) -> None:
         },
     ]
     _write_csv(TABLE_DIR / "r5_baskets_summary.csv", baskets_rows)
+
+    # 3b. Microchips IS lead-lag structure (MICROCHIP_CIRCLE leading at exact integer lags)
+    mc_rows: list[dict[str, object]] = []
+    mc_targets = (
+        ("MICROCHIP_OVAL", 50),
+        ("MICROCHIP_SQUARE", 100),
+        ("MICROCHIP_RECTANGLE", 150),
+        ("MICROCHIP_TRIANGLE", 200),
+    )
+    c_d2 = mid_d2["MICROCHIP_CIRCLE"].diff().dropna().to_numpy(dtype=np.float64)
+    c_d3 = mid_d3["MICROCHIP_CIRCLE"].diff().dropna().to_numpy(dtype=np.float64)
+    for target_sym, peak_lag in mc_targets:
+        t_d2 = mid_d2[target_sym].diff().dropna().to_numpy(dtype=np.float64)
+        t_d3 = mid_d3[target_sym].diff().dropna().to_numpy(dtype=np.float64)
+        for lag in (1, peak_lag - 1, peak_lag, peak_lag + 1):
+            x2, y2 = c_d2[:-lag], t_d2[lag:]
+            x3, y3 = c_d3[:-lag], t_d3[lag:]
+            corr_2 = float(np.corrcoef(x2, y2)[0, 1])
+            corr_3 = float(np.corrcoef(x3, y3)[0, 1])
+            beta_is = float(
+                np.cov(np.concatenate([x2, x3]), np.concatenate([y2, y3]))[0, 1]
+                / np.var(np.concatenate([x2, x3]))
+            )
+            mc_rows.append({
+                "leader": "MICROCHIP_CIRCLE",
+                "follower": target_sym,
+                "lag_ticks": lag,
+                "is_d2_corr": round(corr_2, 4),
+                "is_d3_corr": round(corr_3, 4),
+                "is_pooled_beta": round(beta_is, 4),
+                "is_peak_lag": lag == peak_lag,
+            })
+    _write_csv(TABLE_DIR / "r5_microchips_leadlag.csv", mc_rows)
 
     # Plot R5 Figure 1: Spread / Sigma ranking & Intra-Category Correlations
     df_prod = pd.DataFrame(prod_rows).sort_values("is_spread_to_sigma", ascending=False)

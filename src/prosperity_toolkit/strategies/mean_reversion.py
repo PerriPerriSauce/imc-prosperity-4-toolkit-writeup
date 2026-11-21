@@ -104,7 +104,8 @@ class DriftAwareQuoter(BaseStrategy):
             dt_steps = max(1.0, (state.timestamp - self._last_ts[sym]) / 100.0)
 
         if book.best_bid is not None and book.best_ask is not None:
-            obs = book.weighted_mid_price or ((book.best_bid + book.best_ask) / 2.0)
+            wmid = book.weighted_mid_price
+            obs = wmid if wmid is not None else ((book.best_bid + book.best_ask) / 2.0)
             if sym not in self._fv:
                 self._fv[sym] = obs
                 self._drift_per_tick[sym] = 0.0

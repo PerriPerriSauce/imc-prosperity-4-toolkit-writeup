@@ -1,6 +1,6 @@
 # Scope, Modeling Assumptions & Known Limitations
 
-Every finding in this repository separates **observed historical order-book data** (`data/raw/`), **estimated in-sample parameters**, **model assumptions**, and **simulated replay / Monte Carlo results**. No metric in this workspace represents an actual live IMC Prosperity 4 portal score.
+Every finding in this repository strictly separates **official live competition results** (Team `63-bit integers`: `60th Worldwide`, `8th Australia`, `13th APAC`, Phase 2 `+700,334` XIRECs), **observed historical order-book data** (`data/raw/`), **estimated in-sample parameters**, **post-contest simulated replay / Monte Carlo results**, and **ex-ante manual challenge models**.
 
 ---
 
@@ -8,37 +8,39 @@ Every finding in this repository separates **observed historical order-book data
 
 | Aspect | Current Status / Coverage | Implication & Mitigation |
 | :--- | :--- | :--- |
-| **Algorithmic Datasets** | Complete public CSV archives for Round 1 (`Day -2..0`), Round 2 (`Day -1..1`), Round 3 (`Day 0..2`), Round 4 (`Day 1..3`), and Round 5 (`Day 2..4`), audited in [`prosperity4_manifest.json`](../data/manifests/prosperity4_manifest.json). | One chronological day per round (`Day 0` R1, `Day 1` R2, `Day 2` R3, `Day 3` R4, `Day 4` R5) is reserved exclusively for single-pass out-of-sample evaluation. Three daily trajectories per round remain narrow for regime exhaustion; circular block bootstrap and synthetic Monte Carlo stress-tests supplement single-day OOS estimates. |
-| **Per-Tick Lambda / Runtime Limits** | Exact numeric server timeout and `lambda` payload bounds were not embedded in historical raw CSVs ([`COMPETITION_SPECIFICATION.md`](competition/COMPETITION_SPECIFICATION.md)). | Measured per-tick runtime stays between `0.034 ms` (R1) and `0.692 ms` (50-asset R5), keeping at least `4x–25x` headroom below standard sub-`3 ms` contest thresholds. |
-| **Position Limits** | Confirmed in archived rules/docs for `±80` (R2), `±200/300` (R3–R4), and `±10` (R5). Round 1 `±20` (`ASH_COATED_OSMIUM`, `INTARIAN_PEPPER_ROOT`) is treated as a configurable assumption where earlier Tutorial vs R1 docs diverged. | [`Round1Submission`](../traders/round1/submission.py) enforces `±20` defensively via a single constant (`POSITION_LIMITS`). |
-| **Live Competition Execution** | No live submission scorecard or portal leaderboard fills are stored locally. | All PnL, Sharpe ratios, and drawdowns are explicitly tagged as **simulated historical replay** or **synthetic Monte Carlo** outcomes. |
+| **Algorithmic Datasets** | Complete public CSV archives for Round 0 (`Day -2..-1`), Round 1 (`Day -2..0`), Round 2 (`Day -1..1`), Round 3 (`Day 0..2`), Round 4 (`Day 1..3`), and Round 5 (`Day 2..4`), hashed in [`prosperity4_manifest.json`](../data/manifests/prosperity4_manifest.json). | One chronological terminal day per round (`Day 0` R1, `Day 1` R2, `Day 2` R3, `Day 3` R4, `Day 4` R5) is reserved strictly for single-pass post-contest out-of-sample auditing. Furthermore, Round 3 and Round 4 share **byte-identical `prices` CSVs on `Day 1` and `Day 2`**. Three daily trajectories per round remain narrow for regime exhaustion—for instance, `R3` Day 2 OOS bootstrap CI spans `[-184,416.62, +355,675.89]` even with `+95,093.00` point PnL—so block bootstrap CIs and stressed MC suites always accompany point PnL. |
+| **Official Position Limits** | Verified across public CSVs and `prosperity4bt` constants: `±80` (R0–R2), `±200` spot / `±300` options (R3–R4), and `±10` across all 50 assets (R5). | Every refined submission ([`traders/round1`](../traders/round1/submission.py)–[`traders/round5`](../traders/round5/submission.py)) and [`ExecutionSimulator`](../src/prosperity_toolkit/execution/simulator.py) enforce the exact same verified limits. |
+| **Per-Tick Lambda / Runtime Limits** | Exact AWS Lambda server timeout and RAM cutoff bounds are not publicly disclosed inside the historical CSVs ([`COMPETITION_SPECIFICATION.md`](competition/COMPETITION_SPECIFICATION.md)). | Measured per-tick mean runtime ranges from `0.0204 ms` (R1) to `0.5518 ms` (50-asset R5), leaving comfortable sub-1ms execution headroom. |
+| **Live vs. Replay Granularity** | Official tournament round totals for Team `63-bit integers` (`+1,221,515` cumulative across R1–R5) are archived in [`competition_results.csv`](../reports/tables/competition_results.csv); tick-by-tick live portal logs are not exported by the platform. | All backtest PnL, IR, drawdowns, and MC tables are explicitly labeled as **post-contest simulated historical replays** or **synthetic Monte Carlo** diagnostics alongside live totals. |
 
 ---
 
 ## 2. Backtesting & Execution Simulator Limitations
 
-1. **Resting Queue Approximation (`queue_aware` vs Matching Engine)**:
-   - Historical snapshots provide aggregated L1–L3 levels rather than per-order arrival queues or full message-by-message L3 feeds. Under [`FillMode.QUEUE_AWARE`](../src/prosperity_toolkit/execution/simulator.py), passive fills only trigger when an observed historical counterparty trade or opposite-side price move sweeps through our price level minus conservatively modeled queue ahead.
-   - True competitive queue priority against **other human participants** on the live Prosperity exchange cannot be reconstructed purely from anonymized historical bot replays—every strategy is therefore stress-tested across `conservative`, `queue_aware`, and `touch` fill modes.
-2. **Simultaneous Batch Limit Cancellation**:
-   - In accordance with Prosperity rules, any symbol whose resting bid sum (`pos + sum(buy_qty) > Q_max`) or ask sum (`pos - sum(|sell_qty|) < -Q_max`) exceeds the position bound triggers full-batch cancellation for that symbol on that tick. Backtests enforce this check strictly, which constrains aggressive multi-level stacking—especially under Round 5's `±10` cap.
-3. **Zero Explicit Fee Schedule on Exchange Trades**:
-   - Standard Prosperity 4 spot/options order-book trades incur zero per-lot exchange fees (unlike Manual R1 Ember Mushroom `0.10`/unit and Manual R5 quadratic impact fees), meaning adverse selection and spread-crossing slip act as the primary transaction costs simulated.
+1. **Passive Queue Model Is an Approximation (`queue_aware` vs. Live Matching Engine)**:
+   - Historical CSVs expose aggregated L1–L3 levels rather than per-order arrival queue updates. Under `FillMode.QUEUE_AWARE`, passive orders follow strict price-time priority (`(-price, idx)` / `(price, idx)`) sharing a finite per-tick public-trade volume budget (`remaining_trade_volumes`), deducting resting book depth $V_{\text{ahead}}$ when matching at touch.
+   - True queue priority against **other human participants** on the live Prosperity exchange cannot be reconstructed purely from anonymized historical bot replays—every strategy is therefore evaluated across all three fill modes (`conservative`, `queue_aware`, `touch`).
+2. **Causal `t - 100` Trade Delivery & Batch Limit Cancellation**:
+   - Following exchange mechanics, `own_trades` and `prior_market_trades` arrive strictly at $t - 100$ (never contemporaneously at $t$), and any symbol batch whose worst-case buy or sell sum exceeds `[-Q_max, +Q_max]` from starting inventory $q_{\text{start}}$ is canceled in full.
+3. **Zero Explicit Fee Schedule on Historical Order-Book Trades**:
+   - Standard Prosperity 4 spot/options exchange CSVs incur zero per-lot transaction fees (unlike Manual R1 Ember Mushroom `0.10`/unit and Manual R5 quadratic fee `(q/100)^2 * 1M`), leaving adverse selection and spread crossing as the primary execution costs simulated.
 
 ---
 
 ## 3. Strategy & Statistical Validation Limitations
 
-1. **In-Sample / Out-of-Sample Sample Size**:
-   - Even with `10,000` timestamps per day, cross-day structural drift (such as `SNACKPACK_CHOCOLATE + VANILLA` equilibrium shifting `-98.2` ticks between `Day 2` and `Day 3`, or `ROBOT_DISHES` volatility jumping `2.8x` on `Day 4`) demonstrates that three trading days cannot span all macro regimes.
-2. **Round 4 Edge-Turnover Trade-Off (`EXP-R4-001`)**:
-   - After aligning `M67_BUMP = 0.5` cleanly to the validated IS plateau (`m67_bump = 0.5, mm_edge = 5.5`), `Round4Submission` outperforms `Round3Ungated` on annualized `Sharpe_252` across every fill mode (`0.3613` vs `0.3488` `queue_aware`), flips `VELVETFRUIT_EXTRACT` from `-328.50` to **`+1,027.00`**, and cuts max drawdown **`-10.8%`** (`3,250.50 -> 2,901.00`), while trading slightly fewer `HYDROGEL_PACK` fills (`11,741.00` vs `12,048.00` `queue_aware`, vs `13,259.50` vs `12,284.50` under `touch`). Separately, aggressive Round 4 spot-chasing parameters (`s_alpha = 0.85`) remain intentionally excluded after failing CSCV/DSR (`PBO = 0.9714`).
-3. **Round 5 Sub-Tick Cointegration (`0.16` ticks) & Single-Day Flow Scope**:
-   - Shifting resting passive quotes on `PEBBLES_*` underperformed unbiased wall-mid quoting (`PM-005`), so `traders/round5/submission.py` decouples passive quoting from atomic IOC cross-taking (`+15,469.00` OOS on `Pebbles`), capturing `88.3%` of the historical single-day public-trade spread ceiling (`+123,173.00` vs `~139.4k`). Full live portal rounds aggregate multi-day sessions and interactive order flow beyond single-day historical replays.
-4. **Executed Notebook & Validation Sync**:
-   - All five research notebooks (`01`–`05`) execute cleanly in place via `nbconvert --execute`, directly matching CLI evaluation tables (`r1_*`–`r5_*` and `manual_challenges_summary.csv`).
+1. **Flat Correlated Grids & Slice-Rank Ties (`CSCV PBO`)**:
+   - Across our `2D` coarse parameter surfaces, neighboring candidates correlate tightly ($N_{\text{eff}} = 1.01\text{--}1.14$). In Round 2 (`local_std = 0.000107`, `PBO = 0.300`) and Round 5 (`local_std = 0.000551`, `PBO = 0.543`), near-identical interior grid points swap ranks randomly across 8-slice CSCV partitions even though `DSR_block = 1.0000` and held-out OOS remains positive (`+94,209.00` R2, `+97,628.00` R5). `CSCV PBO` should therefore be read jointly with `N_eff`, `local_std`, and `DSR_block`, not as an isolated threshold.
+2. **Round 3 / Round 4 Volatility & Sample Variance**:
+   - Holding large directional/volatility inventory across 10 `VEV` strikes and `±200` spot caps (`R3` `MaxDD = 75,774.00`, `R4` `MaxDD = 71,177.00`) produces wide OOS bootstrap intervals (`R3`: `[-184.4k, +355.7k]`; `R4`: `[+14.7k, +525.4k]`) and non-zero adverse-selection stress loss rates (`30.0%` R3, `27.5%` R4 in `N = 40` stressed MC).
+3. **Honest Pruned Alpha Hypotheses**:
+   - Testing R3 spot delta hedging, R4 `Mark 67` 1-tick spread bounce (`causal_1_to_200 = +0.113`, `t = 1.56`), R5 `Pebbles` crossing (basket `std = 2.82` trapped inside `12–14` tick spreads), and R5 `VOL_GUARD` halts on strictly IS data rejected all four before OOS deployment.
+4. **Finite MC Wilson Uncertainty**:
+   - Zero observed losses across `N = 40` synthetic sessions implies an exact 95% Wilson upper loss-rate bound of `8.76%` (`0.0876`), never "0% true risk of loss".
+
+---
 
 ## 4. Manual Challenge Uncertainty (`docs/manual/`)
 
-Unlike exchange CSVs, opponent manual submissions are unobserved during each live round:
-- Exact payoff formulas (`251%` annualized `Aether Crystal` vol, `AC_40_BP` payoff `10`, `9` Ignith goods, Round 3 cubic penalty) come directly from round problem statements (`MANUAL_CHALLENGES.md`), while uncertain opponent variables (competing human auction demand in R1, peer Speed distributions in R2, cohort mean second-bid $\bar{b}_2$ in R3, and Ignith edge dispersion $\sigma_i$ in R5) are modeled strictly via **ex-ante Bayesian priors and Cognitive Hierarchy sensitivity sweeps** supporting each round's final portal submission.
+Unlike exchange CSVs, exact opponent manual choices during each round are unobserved:
+- Structural payoff rules (`251%` `Aether Crystal` vol, `AC_40_BP` binary payout `10`, `9` Ignith catalysts, Round 3 cubic cliff) follow the problem specifications ([`MANUAL_CHALLENGES.md`](manual/MANUAL_CHALLENGES.md)), while uncertain crowd parameters (competing auction demand in R1, Speed CDFs in R2, cohort mean $\bar{b}_2$ in R3, Ignith edge beliefs/vols in R5, with `Ashes of the Phoenix` floored at `-0.92 > -1.00`) represent **explicit ex-ante priors** evaluated against Team `63-bit integers`' realized live manual payouts (`+524,070` XIRECs across R1–R5).

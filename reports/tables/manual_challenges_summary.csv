@@ -5,16 +5,16 @@ R1,An Intarian Welcome,EMBER_MUSHROOM (stochastic human demand),"fill_rate=0.73,
 R2,Invest & Expand,Cognitive Hierarchy (L1 Best Response),speed_mult=0.757,"r=17.30%, s=53.20%, p=29.5%",305185.1,XIRECs Net EV,Iterated best-response step L1 against field belief
 R2,Invest & Expand,Cognitive Hierarchy (L2 Best Response),speed_mult=0.820,"r=15.65%, s=46.85%, p=37.5%",277759.71,XIRECs Net EV,Iterated best-response step L2 against field belief
 R2,Invest & Expand,Cognitive Hierarchy (L3 Best Response),speed_mult=0.818,"r=14.71%, s=43.29%, p=42.0%",246036.1,XIRECs Net EV,Iterated best-response step L3 against field belief
-R2,Invest & Expand,Final Submitted Allocation (L3 Focal Equilibrium),speed_mult=0.761,"r=14.71%, s=43.29%, p=42.0%",225094.01,XIRECs Net EV,Portal input (15%/43%/42% rounded); Level-3 stopping point on 42-44% ridge
+R2,Invest & Expand,Ex-Ante Model Allocation (L3 Focal Equilibrium),speed_mult=0.761,"r=14.71%, s=43.29%, p=42.0%",225094.01,XIRECs Net EV,Model-optimal discrete input (15%/43%/42%); L3 stopping point on 42-44% ridge
 R2,Invest & Expand,CH Mixture Stress Check (Unregularized QRE),speed_mult=0.803,"r=14.29%, s=41.71%, p=44.0%",226942.8,XIRECs Net EV,Continuous L0-L3 best-response sensitivity upper edge
-R3,Celestial Gardeners Guild,"Final Submitted Bayesian Policy (avg_b2 ~ N(875, 15^2))","resale=920, exp_acc=0.768","b1=775, b2=880",76.0,XIRECs EV/unit,Integrates asymmetric cubic cliff over cohort uncertainty
+R3,Celestial Gardeners Guild,"Ex-Ante Bayesian Optimal Policy (avg_b2 ~ N(875, 15^2))","resale=920, exp_acc=0.768","b1=775, b2=880",76.0,XIRECs EV/unit,Integrates asymmetric cubic cliff over cohort uncertainty
 R3,Celestial Gardeners Guild,Conservative Cohort Point Sensitivity (avg_b2=860),"resale=920, acc=0.765","b1=760, b2=860",83.14,XIRECs EV/unit,Ex-ante lower-crowd aggressiveness sensitivity bound
-R4,Aether Crystal Exotics,AC_50_CO (ask=22.200),"ko_p=0.000, delta=+0.217",SELL (edge=-0.3866),21.8134,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days, 4/day GBM"
-R4,Aether Crystal Exotics,AC_40_BP (ask=5.000),"ko_p=0.000, delta=-0.130",SELL (edge=-0.2390),4.761,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days, 4/day GBM"
-R4,Aether Crystal Exotics,AC_45_KO (ask=0.175),"ko_p=0.618, delta=+0.003",BUY (edge=+0.0358),0.2108,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days, 4/day GBM"
-R4,Aether Crystal Exotics,AC_50_C15 (ask=11.920),"ko_p=0.000, delta=+0.615",SELL (edge=-0.0965),11.8235,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days, 4/day GBM"
-R4,Aether Crystal Exotics,AC_50_P15 (ask=12.000),"ko_p=0.000, delta=-0.382",HEDGE (edge=-0.0135),11.9865,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days, 4/day GBM"
-R4,Aether Crystal Exotics,AC_45_KO (fine 24/day barrier),"ko_p=0.639, se=0.0038",Shows BGK continuous-limit discount (< 4/day discrete),0.157,Fair Value (XIRECs),Explains why discrete monitoring commands positive ask edge
-R4,Aether Crystal Exotics,Mean-Variance Hedged Basket,"std_cut=-90.3%, CVaR95=-575.5",Sharpe=0.080 vs unhedged 0.022,23.7,Expected Portfolio EV,"Short AC_50_CO & AC_40_BP, Long 500 AC_45_KO + straddle hedge"
-R5,Extra! Extra!,Ashflow Alpha Exact KKT (9 Ignith Goods),"lambda*=0.6060, gross=100.0%","fees=289,380, active=5/9",895380.0,XIRECs Net EV,"Prunes noisy hype/mixed goods; vs naive 1/9 (544,444)"
-R5,Extra! Extra!,Ashflow Alpha Risk-Adjusted KKT (kappa=3.0),"lambda*=0.5271, gross=100.0%","fees=267,688, active=5/9",893543.96,XIRECs Net EV,Down-weights high-variance uncertain catalysts to cap CVaR
+R4,Aether Crystal Exotics,AC_50_CO (quote=22.200),"ko_p=0.000, delta=+0.219",SELL (edge=-0.3023),21.8977,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days (Exact BS/Rubinstein)"
+R4,Aether Crystal Exotics,AC_40_BP (quote=5.000),"ko_p=0.000, delta=-0.130",SELL (edge=-0.2321),4.7679,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days (Exact BS/Rubinstein)"
+R4,Aether Crystal Exotics,AC_45_KO (quote=0.175),"ko_p=0.616, delta=+0.005",BUY (edge=+0.0363),0.2113,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days (Discrete 4/day GBM)"
+R4,Aether Crystal Exotics,AC_50_C15 (quote=11.920),"ko_p=0.000, delta=+0.620",BUY (edge=+0.1069),12.0269,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days (Exact BS/Rubinstein)"
+R4,Aether Crystal Exotics,AC_50_P15 (quote=12.000),"ko_p=0.000, delta=-0.380",BUY (edge=+0.0269),12.0269,Fair Value (XIRECs),"S0=50, sigma_ann=251%, 15 trading days (Exact BS/Rubinstein)"
+R4,Aether Crystal Exotics,AC_45_KO (fine 24/day barrier),"ko_p=0.639, se=0.0029",Shows BGK continuous-limit discount (< 4/day discrete),0.1562,Fair Value (XIRECs),Explains why discrete monitoring commands positive ask edge
+R4,Aether Crystal Exotics,Mean-Variance Hedged Basket (Day-15 Terminal),"std_cut=-70.1%, std=393.7, CVaR95=-389.9",Sharpe=0.104 vs unhedged 0.044,40.96,Expected Portfolio EV,"AC_50_CO:-50, AC_40_BP:-50, AC_45_KO:+183, AC_50_C15:+53, AC_50_P15:+74"
+R5,Extra! Extra!,Ashflow Alpha Exact KKT (9 Ignith Goods),"lambda*=0.5700, gross=100.0%","fees=287,400, active=5/9",857400.0,XIRECs Net EV,"Prunes noisy hype/mixed goods; vs naive 1/9 (524,444)"
+R5,Extra! Extra!,Ashflow Alpha Risk-Adjusted KKT (kappa=3.0),"lambda*=0.4916, gross=100.0%","fees=268,099, active=5/9",855944.53,XIRECs Net EV,Down-weights high-variance uncertain catalysts to cap CVaR

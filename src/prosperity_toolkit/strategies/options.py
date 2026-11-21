@@ -88,8 +88,14 @@ class OptionsVolatilityStrategy(OptionsStrategyContract):
     ) -> tuple[float, float]:
         if self.config.pricing_model == "bachelier":
             steps_left = max(1.0, tte * self.config.tte_scale_days * self.config.steps_per_day)
-            fair = bachelier_call(spot, strike, steps_left, self._atm_vol)
-            delta = bachelier_call_delta(spot, strike, steps_left, self._atm_vol)
+            # Convert annualized lognormal vol estimate to per-step arithmetic tick sigma
+            sigma_per_step = (
+                self._atm_vol
+                * spot
+                / math.sqrt(self.config.tte_scale_days * self.config.steps_per_day)
+            )
+            fair = bachelier_call(spot, strike, steps_left, sigma_per_step)
+            delta = bachelier_call_delta(spot, strike, steps_left, sigma_per_step)
             return fair, delta
         fair = black_scholes_call(spot, strike, tte, self._atm_vol)
         delta = black_scholes_call_delta(spot, strike, tte, self._atm_vol)
@@ -102,7 +108,8 @@ class OptionsVolatilityStrategy(OptionsStrategyContract):
             return []
 
         if spot_book.best_bid is not None and spot_book.best_ask is not None:
-            obs_spot = spot_book.weighted_mid_price or (
+            wmid = spot_book.weighted_mid_price
+            obs_spot = wmid if wmid is not None else (
                 (spot_book.best_bid + spot_book.best_ask) / 2.0
             )
             self._spot_ema = (
@@ -120,9 +127,13 @@ class OptionsVolatilityStrategy(OptionsStrategyContract):
 
         # Online ATM vol smoothing from nearest active strike in BS mode
         if self.config.pricing_model == "bs":
-            for spec in self.config.strikes:
+            nearest_specs = sorted(
+                self.config.strikes,
+                key=lambda s: abs(s.strike - spot_fv),
+            )
+            for spec in nearest_specs:
                 if abs(spec.strike - spot_fv) > 150.0:
-                    continue
+                    break
                 ob = state.get_book(spec.symbol)
                 if ob is not None and ob.best_bid is not None and ob.best_ask is not None:
                     mid_opt = (ob.best_bid + ob.best_ask) / 2.0
@@ -202,7 +213,7 @@ class OptionsVolatilityStrategy(OptionsStrategyContract):
                 abs(spot_book.asks[spot_book.best_ask]),
                 spot_buy_cap,
             )
-            if qty > 0 and spot_book.best_ask <= spot_fv + 2.0:
+            if qty > 0 and spot_book.best_ask <= spot_fv + self.config.spot_take_edge:
                 orders.append(
                     OrderRequest(
                         symbol=self.config.spot_symbol,
@@ -218,7 +229,7 @@ class OptionsVolatilityStrategy(OptionsStrategyContract):
                 abs(spot_book.bids[spot_book.best_bid]),
                 spot_sell_cap,
             )
-            if qty > 0 and spot_book.best_bid >= spot_fv - 2.0:
+            if qty > 0 and spot_book.best_bid >= spot_fv - self.config.spot_take_edge:
                 orders.append(
                     OrderRequest(
                         symbol=self.config.spot_symbol,

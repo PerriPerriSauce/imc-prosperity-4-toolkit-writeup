@@ -6,17 +6,24 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from prosperity_toolkit.backtesting.engine import BacktestEngine
 from prosperity_toolkit.backtesting.replay import build_snapshots_from_dataframes
-from prosperity_toolkit.competition.submission import SubmissionValidator
+from prosperity_toolkit.competition import (
+    CompetitionStrategyAdapter,
+    SubmissionValidator,
+    get_round_position_limits,
+    load_competition_trader,
+)
 from prosperity_toolkit.data.loader import DataLoader
-from prosperity_toolkit.execution.simulator import ExecutionSimulator
+from prosperity_toolkit.execution.simulator import ExecutionSimulator, FillMode
 from prosperity_toolkit.simulation import (
     AssetScenarioConfig,
     MonteCarloEngine,
     OrnsteinUhlenbeckParams,
 )
+from prosperity_toolkit.strategies.base import BaseStrategy
 from prosperity_toolkit.strategies.baseline import NoOpBaselineStrategy
 from prosperity_toolkit.visualisation.dashboard import ResearchDashboard
 
@@ -49,10 +56,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path to semicolon-delimited trades CSV file.",
     )
     replay_parser.add_argument(
+        "--round",
+        type=int,
+        default=None,
+        help="Optional Prosperity 4 round (0-5) to load official product limits.",
+    )
+    replay_parser.add_argument(
         "--limit",
         type=int,
-        default=20,
-        help="Default position limit per product (default: 20).",
+        default=80,
+        help="Fallback position limit per product when --round is omitted (default: 80).",
+    )
+    replay_parser.add_argument(
+        "--submission",
+        type=Path,
+        default=None,
+        help="Optional path to standalone submission.py script defining Trader.",
+    )
+    replay_parser.add_argument(
+        "--fill-mode",
+        choices=["conservative", "queue_aware", "touch"],
+        default="queue_aware",
+        help="Simulator passive fill matching mode (default: queue_aware).",
     )
 
     validate_parser = subparsers.add_parser("validate", help="Validate submission strategy file")
@@ -70,21 +95,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_replay(prices_path: Path, trades_path: Path | None, default_limit: int) -> int:
+def _run_replay(
+    prices_path: Path,
+    trades_path: Path | None,
+    default_limit: int,
+    round_num: int | None = None,
+    submission_path: Path | None = None,
+    fill_mode: FillMode = "queue_aware",
+) -> int:
     """Execute historical replay from CSV inputs."""
     prices_df = DataLoader.load_prices_csv(prices_path)
     trades_df = DataLoader.load_trades_csv(trades_path) if trades_path is not None else None
 
     snapshots = build_snapshots_from_dataframes(prices_df, trades_df)
     symbols = {str(p) for p in prices_df["product"].unique()}
-    limits = dict.fromkeys(symbols, default_limit)
+    if round_num is not None:
+        official = get_round_position_limits(round_num)
+        limits = {sym: official.get(sym, default_limit) for sym in symbols}
+    else:
+        limits = dict.fromkeys(symbols, default_limit)
 
-    simulator = ExecutionSimulator(position_limits=limits)
+    simulator = ExecutionSimulator(position_limits=limits, fill_mode=fill_mode)
     engine = BacktestEngine(simulator=simulator)
-    strategy = NoOpBaselineStrategy()
+    strategy: BaseStrategy
+    if submission_path is not None:
+        trader = load_competition_trader(submission_path)
+        strategy = CompetitionStrategyAdapter(trader, name=submission_path.parent.name)
+    else:
+        strategy = NoOpBaselineStrategy()
     result = engine.run(strategy, snapshots=snapshots)
 
-    print(f"Replayed {len(snapshots)} ticks across {len(symbols)} symbols.")
+    print(
+        f"Replayed {len(snapshots)} ticks across {len(symbols)} symbols "
+        f"(strategy={result.strategy_name}, fill_mode={fill_mode}).",
+    )
     print(ResearchDashboard.render_markdown_summary(result.summary()))
     return 0
 
@@ -127,7 +171,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     if args.command == "replay":
-        return _run_replay(args.prices, args.trades, args.limit)
+        return _run_replay(
+            args.prices,
+            args.trades,
+            args.limit,
+            round_num=args.round,
+            submission_path=args.submission,
+            fill_mode=cast(FillMode, args.fill_mode),
+        )
     if args.command == "validate":
         return _run_validate(args.filepath)
     if args.command == "mc":

@@ -1,38 +1,27 @@
 # Market Making Mechanics Across Position & Spread Regimes (Rounds 1–5)
 
-Our production market-making engines evolve across Rounds 1 through 5 around a single invariant core—**reservation-adjusted Avellaneda–Stoikov quoting bounded by non-crossing fair-value margins**—while scaling risk aversion, spread selectivity, sizing clips, and hedging controls strictly to each round's position-limit and microstructure geometry.
+Our production market-making engines evolve across Rounds 1 through 5 around a consistent core—**reservation-adjusted Avellaneda–Stoikov quoting bounded by fair-value margins**—while matching limits, volatility scaling, and selective edge additions strictly to verified microstructure geometry.
 
 ## 1. Unified Quoting Architecture
 
-Given estimated fair value $V_t$, current inventory $q_t$, position cap $Q_{\max}$, inventory aversion $\gamma$, and minimum half-spread $e_{\min}$, every strategy computes its reservation price:
+Given fair value $V_t$, starting inventory $q_t$, position cap $Q_{\max}$, effective inventory skew $\gamma_t$, and edge floor $e_t$:
+$$r_t = V_t - \gamma_t \cdot q_t, \qquad b_t^* \le \lfloor r_t - e_t \rfloor, \qquad a_t^* \ge \lceil r_t + e_t \rceil$$
+after first taking mispriced resting depth inside `[FV - take_edge, FV + take_edge]` and deducting taken size from `q_rem_buy` / `q_rem_sell` under Prosperity's starting-position batch limit rule ([`COMPETITION_SPECIFICATION.md`](../competition/COMPETITION_SPECIFICATION.md)).
 
-$$r_t = V_t - \gamma \cdot q_t, \qquad b_t^* = \lfloor \min(b_{\text{penny}}, \, r_t - e_{\min}) \rfloor, \qquad a_t^* = \lceil \max(a_{\text{penny}}, \, r_t + e_{\min}) \rceil$$
+## 2. Production Scorecard Verified Through Validation Gates (R1–R5 OOS, `queue_aware`)
 
-where penny-joining quotes improve best resting bot depth only inside `[r_t - e_min, r_t + e_min]` boundaries so passive quotes never chase adverse order flow across our edge floor. Simultaneous resting quantities strictly enforce:
+| Round | Inventory Cap $Q_{\max}$ | Interior Plateau (`IS`) | OOS PnL (`QA`) | `IR_tick` | `BlkSR_1k` | `MaxDD` | Key Microstructural Takeaway |
+| :---: | :---: | :--- | ---: | ---: | ---: | ---: | :--- |
+| **R1** | `±80` | `min_edge=2.0, skew=0.40` | **`+91,098.00`** | `0.05445` | `9.327` | `1,405.00` | Fixed `10k` Osmium MM + max-wall Pepper carry (`Osmium +11.4k, Pepper +79.7k`) |
+| **R2** | `±80` | `min_edge=2.5, skew=0.40` | **`+94,209.00`** | `0.05466` | `8.237` | `1,401.00` | Unskewed `SymmetricMM_80` bleeds `-20,294.50` riding `+0.10/tick` trend |
+| **R3** | `±200` / `±300` | `spot_scale=30.0, enter_band=10.0` | **`+95,093.00`** | `0.00584` | `0.573` | `75,774.00` | Bayesian OU + BS total-vol `VEV_4000..5500` **without** destructive spot delta hedging |
+| **R4** | `±200` / `±300` | `spot_scale=30.0, flow_weight=1.5` | **`+260,540.00`** | `0.01680` | `0.646` | `71,177.00` | Strictly causal `Mark 14` SELL / `Mark 55` BUY flow adds `+11,153.50` vs `Round3NoFlow` |
+| **R5** | `±10` (`50` assets) | `vsm=0.18, ef=0.14, mc=0.16` | **`+97,628.00`** | `0.02624` | `1.108` | `14,961.50` | Vol-scaled AS + discrete `MICROCHIP_CIRCLE` lag beats `Round5NoLeadLag` (`+2,215.50`), `1.66x` `PnL/DD` vs EMA MM |
 
-$$q_t + \sum_{k} Q^{\text{buy}}_{t,k} \le Q_{\max}, \qquad q_t - \sum_{k} |Q^{\text{sell}}_{t,k}| \ge -Q_{\max}$$
+## 3. Adaptive Volatility Scaling Without Hard Halts (`Round 5`)
 
-preventing Prosperity's symbol-wide batch cancellation rule ([`COMPETITION_SPECIFICATION.md`](../competition/COMPETITION_SPECIFICATION.md)).
+With uniform `±10` position caps across `50` assets (`Galaxy Sounds`, `Sleep Pods`, `Microchips`, `Pebbles`, `Robots`, `UV-Visors`, `Translators`, `Panels`, `Oxygen Shakes`, `Snackpacks`), categories split between wide high-ratio MM books (`Oxygen Shakes +28,934.5`, `Galaxy Sounds +21,013.5`, `Sleep Pods +13,606.5`, `Snackpacks +11,085.5`, `UV-Visors +11,077.0` OOS) and volatile narrow-ratio random walks (`Robots -1,228.0`, `Panels -1,386.5` OOS). Scaling skew and reservation margins proportionally to rolling step volatility (`vol_skew_mult * vol_ema`, `edge_frac * vol_ema`) protects downside (`14,961.50` MaxDD vs `29,130.00` `EmaSymmetricMM_All50`) without sacrificing profitable re-quoting flow as hard `VOL_GUARD` halts did.
 
-## 2. Parameter Regimes Verified Through Validation Gates (R1–R5)
+## 4. Queue-Aware Price-Time Conservation vs. Touch Sensitivity
 
-| Round | Inventory Cap $Q_{\max}$ | Validated Plateau | OOS PnL (`queue_aware`) | OOS `Sharpe_252` | OOS Max DD | Primary Market-Making Lesson |
-| :--- | :---: | :--- | ---: | ---: | ---: | :--- |
-| **Round 1** | `20` *(assumed)* | `min_edge = 1.5`, `skew = 0.80` | `+22,157.00` | `1.1894` | `267.00` | Bot-wall FV + penny-joining beats naive L1 MM (`+10,825`) by `>2x` |
-| **Round 2** | `80` | `min_edge = 3.5`, `skew = 0.75` | `+27,463.00` | `1.3972` | `419.50` | Unskewed `SymmetricMM_80` bleeds `-20,294.50` riding `+0.108`/tick trends |
-| **Round 3** | `200` / `300` | `mm_edge = 4.5`, `mm_skew = 0.10` | `+7,525.50` | `0.2276` | `1,936.00` | Wide-spread `HYDROGEL_PACK` (`15.7`-tick spread) + ITM `VEV_4000` carry options hedging costs |
-| **Round 4** | `200` / `300` | `m67_bump = 0.5`, `mm_edge = 5.5` | `+11,741.00` | `0.3613` | `2,901.00` | Live `Mark 67` flow gating flips `VELVETFRUIT_EXTRACT` to `+1,027.00` & cuts MaxDD `-10.8%` vs R3 |
-| **Round 5** | **`10`** (`50` assets) | `edge_frac = 0.18`, `skew = 1.25` | **`+123,173.00`** | **`0.8109`** | `6,205.50` | Full `QUOTE_CLIP = 10` + dynamic `VOL_GUARD` + atomic `Pebbles` captures `88.3%` of single-day public ceiling while cutting DD `-78.7%` vs lagged EMA (`29,130`) |
-
-## 3. Dynamic Selectivity & Clip Sizing Under Tight Limits (`Round 5`)
-
-In Round 5, position caps tighten from `200–300` down to **`±10`** across **`50` securities**, exposing a fundamental execution trade-off parameterized by each symbol's spread-to-innovation ratio:
-
-$$\text{MM Opportunity Index}_i = \frac{\text{Median Bid-Ask Spread}_i}{\sigma_{\Delta P, i}}$$
-
-1. **High-Margin Categories**: `Snackpacks` (`2.10–3.04`, e.g., `SNACKPACK_PISTACHIO = 3.035`), `UV-Visors` (`1.25–1.32`), `Galaxy Sounds` (`1.25–1.29`), and `Oxygen Shakes` (`1.06–1.30`) compensate inventory variance `1.1x–3.0x` per spread capture. Under tight `±10` bounds, quoting the full `QUOTE_CLIP = 10` capacity captures multi-unit synchronized pulse sweeps (`Galaxy Sounds +24,662.00`, `Oxygen Shakes +16,875.50`).
-2. **Adaptive Guarding on `Robots` & `Microchips`**: These two categories trade at narrow `0.54–0.89` ratios, and `ROBOT_DISHES` spiked `2.8x` in step volatility on held-out `Day 4` (`9.83 -> 27.48`). Rather than losing profitable ticks everywhere or blowing up during volatility spikes, [`traders/round5/submission.py`](../../traders/round5/submission.py) applies a wider `LOW_RATIO_EDGE_FRAC = 0.35`, `1.5x` inventory skew, and a dynamic rolling step-volatility guard (`spread >= 0.50 * vol_ema`)—delivering **`+7,124.00`** on `Microchips` and **`+1,240.00`** on `Robots` OOS (`Day 4`) while preserving `PBO = 0.1000` (`DSR = 1.0000`).
-
-## 4. Queue-Aware Discipline vs Touch Bias
-
-Across every round (`r1_ablation_summary.csv`, `r2..r5_ablation_summary.csv`), passive `touch` matching systematically overstates realized PnL by allowing fills without clearing resting bot depth ahead (`R1: 22,667` vs `22,157`; `R2: 28,040.5` vs `27,463.0`; `R3: 8,490.0` vs `7,525.5`; `R4: 13,259.5` vs `11,741.0`; `R5: 140,545.5` vs `123,173.0`). All parameter selection and validation gates in this toolkit run strictly under `queue_aware` matching and cross-verify against worst-case `conservative` execution before acceptance.
+Under `ExecutionSimulator`, `queue_aware` enforces strict price-time priority and a shared non-renewable public-trade volume budget per tick (while `conservative` fills strictly through limit prices and `touch` ignores queue ahead). Across R1–R5 OOS, `conservative` (`91,098` R1; `94,209` R2; `95,093` R3; `260,537` R4; `97,514` R5) closely tracks `queue_aware` (`91,098` R1; `94,209` R2; `95,093` R3; `260,540` R4; `97,628` R5), demonstrating that alpha does not rely on touch-optimistic queue assumptions (`touch`: `91,743` R1 .. `114,924` R5).

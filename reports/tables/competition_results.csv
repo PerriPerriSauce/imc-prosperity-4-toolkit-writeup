@@ -1,0 +1,6 @@
+round,phase,algo_pnl,manual_pnl,round_total_pnl,postcontest_oos_algo_pnl,notes
+R1,Phase 1,116927,87995,204922,91098.0,Stationary Osmium MM + Pepper carry; R1 Uniform Clearing manual
+R2,Phase 1,115543,200716,316259,94209.0,"Live Algo exceeds 1-day OOS (+94,209) via MAF liquidity & multi-day carry"
+R3,Phase 2,213104,78225,291329,95093.0,Phase 2 leaderboard reset; OU spots + VEV calls & Bayesian reserve manual
+R4,Phase 2,220783,36969,257752,260540.0,Causal Mark 14/55 counterparty flow + Aether Crystal discrete/straddle manual
+R5,Phase 2,31087,120165,151252,97628.0,"Live R5 sprint capped algo at +31,087 before post-contest redesign reached +97,628"

@@ -188,7 +188,7 @@ def main() -> None:
             {
                 "round": "R2",
                 "challenge": "Invest & Expand",
-                "scenario": "Final Submitted Allocation (L3 Focal Equilibrium)",
+                "scenario": "Ex-Ante Model Allocation (L3 Focal Equilibrium)",
                 "parameter": f"speed_mult={focal.speed_multiplier:.3f}",
                 "optimal_action": (
                     f"r={focal.research_pct:.2f}%, "
@@ -197,7 +197,7 @@ def main() -> None:
                 "expected_metric": round(focal.net_pnl, 2),
                 "metric_unit": "XIRECs Net EV",
                 "assumption_note": (
-                    "Portal input (15%/43%/42% rounded); Level-3 stopping point on 42-44% ridge"
+                    "Model-optimal discrete input (15%/43%/42%); L3 stopping point on 42-44% ridge"
                 ),
             },
             {
@@ -234,7 +234,7 @@ def main() -> None:
             {
                 "round": "R3",
                 "challenge": "Celestial Gardeners Guild",
-                "scenario": "Final Submitted Bayesian Policy (avg_b2 ~ N(875, 15^2))",
+                "scenario": "Ex-Ante Bayesian Optimal Policy (avg_b2 ~ N(875, 15^2))",
                 "parameter": f"resale=920, exp_acc={r3_bayes.expected_accept_prob:.3f}",
                 "optimal_action": f"b1={r3_bayes.bid_1}, b2={r3_bayes.bid_2}",
                 "expected_metric": round(r3_bayes.expected_profit_per_unit, 2),
@@ -305,7 +305,7 @@ def main() -> None:
     ]
     r4_vals = [
         price_aether_crystal_contract(
-            spec, spot=50.0, step_sigma_log=step_sigma_real, n_paths=60_000, seed=42
+            spec, spot=50.0, step_sigma_log=step_sigma_real, n_paths=100_000, seed=42
         )
         for spec in exotic_specs
     ]
@@ -322,23 +322,24 @@ def main() -> None:
         ),
         spot=50.0,
         step_sigma_log=annualized_to_step_sigma(2.51, steps_per_day=24, days_per_year=252),
-        n_paths=60_000,
+        n_paths=100_000,
         seed=42,
     )
 
     for spec, val in zip(exotic_specs, r4_vals, strict=True):
         edge = val.fair_value - spec.ask_price
-        side = "BUY" if edge > 0.02 else ("SELL" if edge < -0.02 else "HEDGE")
+        side = "BUY" if edge > 0.01 else ("SELL" if edge < -0.01 else "HEDGE")
+        method = "Discrete 4/day GBM" if spec.kind == "knockout_put" else "Exact BS/Rubinstein"
         rows.append(
             {
                 "round": "R4",
                 "challenge": "Aether Crystal Exotics",
-                "scenario": f"{spec.name} (ask={spec.ask_price:.3f})",
+                "scenario": f"{spec.name} (quote={spec.ask_price:.3f})",
                 "parameter": f"ko_p={val.knockout_prob:.3f}, delta={val.delta_fd:+.3f}",
                 "optimal_action": f"{side} (edge={edge:+.4f})",
                 "expected_metric": round(val.fair_value, 4),
                 "metric_unit": "Fair Value (XIRECs)",
-                "assumption_note": "S0=50, sigma_ann=251%, 15 trading days, 4/day GBM",
+                "assumption_note": f"S0=50, sigma_ann=251%, 15 trading days ({method})",
             }
         )
     rows.append(
@@ -366,24 +367,26 @@ def main() -> None:
         lot_bounds=lot_bounds,
         spot=50.0,
         annual_vol=2.51,
-        n_paths=40_000,
+        n_paths=100_000,
         risk_aversion=0.00015,
         seed=42,
     )
+    lots_desc = ", ".join(f"{k}:{round(v):+d}" for k, v in r4_port.optimal_lots.items())
     rows.append(
         {
             "round": "R4",
             "challenge": "Aether Crystal Exotics",
-            "scenario": "Mean-Variance Hedged Basket",
+            "scenario": "Mean-Variance Hedged Basket (Day-15 Terminal)",
             "parameter": (
-                f"std_cut=-{r4_port.std_reduction_pct:.1f}%, CVaR95={r4_port.cvar_95:,.1f}"
+                f"std_cut=-{r4_port.std_reduction_pct:.1f}%, "
+                f"std={r4_port.pnl_std:,.1f}, CVaR95={r4_port.cvar_95:,.1f}"
             ),
             "optimal_action": (
                 f"Sharpe={r4_port.sharpe_ratio:.3f} vs unhedged {r4_port.unhedged_sharpe:.3f}"
             ),
             "expected_metric": round(r4_port.expected_pnl, 2),
             "metric_unit": "Expected Portfolio EV",
-            "assumption_note": "Short AC_50_CO & AC_40_BP, Long 500 AC_45_KO + straddle hedge",
+            "assumption_note": lots_desc,
         }
     )
 
@@ -393,7 +396,7 @@ def main() -> None:
     ashflow_edges = {
         "Thermalite Core": 1.35,      # Strong active-user smart-home expansion
         "Sulfur Reactor": 1.18,       # Elemental Index 118 passive tracker demand
-        "Ashes of the Phoenix": -1.10, # Resurfaced negative sourcing video
+        "Ashes of the Phoenix": -0.92, # Resurfaced negative sourcing video (bounded > -100%)
         "Pyroflex Cells": -0.78,      # Tax-cut repeal headwind
         "Scoria Paste": 0.62,         # Stockpiling / maintenance demand
         "Obsidian Cutlery": -0.42,    # Assembly outage vs recovery uncertainty
@@ -524,7 +527,7 @@ def main() -> None:
         color="#d62728",
         ls=":",
         lw=2.0,
-        label=f"Submitted L3 Focal {focal.speed_pct:.0f}%",
+        label=f"Ex-Ante L3 Focal {focal.speed_pct:.0f}%",
     )
     ax.axvline(
         ea.speed_pct, color="#2ca02c", ls="--", lw=1.8, label=f"Mixture Stress {ea.speed_pct:.0f}%"
@@ -572,7 +575,7 @@ def main() -> None:
     asks_d = [22.20, 5.00, 0.175]
     x_d = np.arange(3)
     w_d = 0.36
-    b_fair = ax.bar(x_d - w_d / 2, fairs_d, w_d, label="MC Fair Value", color="#1f77b4")
+    b_fair = ax.bar(x_d - w_d / 2, fairs_d, w_d, label="Model Fair Value", color="#1f77b4")
     b_ask = ax.bar(x_d + w_d / 2, asks_d, w_d, label="Market Quote", color="#ff7f0e")
     for bar, v in zip(b_fair, fairs_d, strict=True):
         ax.text(
@@ -693,7 +696,7 @@ def main() -> None:
         )
     print(
         f"R2 Mixture={ea.research_pct:.2f}%/{ea.scale_pct:.2f}%/{ea.speed_pct:.1f}% "
-        f"net={ea.net_pnl:,.2f} | SubmittedL3={focal.research_pct:.2f}%/{focal.scale_pct:.2f}%/"
+        f"net={ea.net_pnl:,.2f} | ExAnteL3={focal.research_pct:.2f}%/{focal.scale_pct:.2f}%/"
         f"{focal.speed_pct:.1f}% net={focal.net_pnl:,.2f}"
     )
     for b_mid, b_r2 in r2_sweep:

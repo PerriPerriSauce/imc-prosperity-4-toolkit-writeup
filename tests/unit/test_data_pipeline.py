@@ -257,3 +257,43 @@ def test_observations_csv_ingestion_and_validation(tmp_path: Path) -> None:
     _, bad_rep = DataLoader.ingest_csv(bad_obs)
     assert not bad_rep.is_valid
     assert any("Unexpected columns" in e for e in bad_rep.errors)
+
+
+def test_normalizer_preserves_null_symbols_and_stable_trade_order(tmp_path: Path) -> None:
+    """NaN product/symbol must not turn into 'nan'; identical trade timestamps preserve order."""
+    from prosperity_toolkit.data.normalizer import DataNormalizer
+
+    null_prod = pd.DataFrame({"timestamp": [0], "product": [None], "mid_price": [100.0]})
+    cleaned = DataNormalizer.clean_prices(null_prod)
+    with pytest.raises(DataValidationError, match="Null values found"):
+        DataIntegrityValidator.validate_price_dataframe(cleaned)
+
+    tied_trades = pd.DataFrame({
+        "timestamp": [100, 100, 100],
+        "symbol": ["A", "A", "A"],
+        "price": [101, 102, 103],
+        "quantity": [1, 2, 3],
+    })
+    cleaned_t = DataNormalizer.clean_trades(tied_trades)
+    assert cleaned_t["price"].tolist() == [101, 102, 103]
+
+    dup_csv = tmp_path / "prices_round_1_day_0.csv"
+    dup_csv.write_text(
+        "day;timestamp;product;bid_price_1;bid_volume_1;ask_price_1;ask_volume_1;mid_price\n"
+        "0;0;OSMIUM;99;5;101;5;100.0\n"
+        "0;0;OSMIUM;99;5;101;5;100.0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(DataValidationError, match="duplicate"):
+        DataLoader.load_prices_csv(dup_csv)
+
+
+def test_order_flow_tracker_signed_imbalance() -> None:
+    """OrderFlowTracker must return signed buy minus sell imbalance, not unsigned sum."""
+    from prosperity_toolkit.market.order_flow import OrderFlowTracker, TradePrint
+
+    tracker = OrderFlowTracker(window_size=10)
+    tracker.record_trade(TradePrint(0, "OSMIUM", 100, 5, buyer="BOT", seller=""))
+    tracker.record_trade(TradePrint(100, "OSMIUM", 100, 2, buyer="", seller="BOT"))
+    tracker.record_trade(TradePrint(200, "OSMIUM", 100, 9, buyer="", seller=""))
+    assert tracker.net_volume_imbalance("OSMIUM") == 3

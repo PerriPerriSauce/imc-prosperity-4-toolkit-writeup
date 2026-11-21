@@ -1,0 +1,2 @@
+round,plateau_params,is_ir_tick,local_mean,local_std,n_eff,cscv_pbo,dsr_block,oos_pnl,oos_ir_tick,oos_block_sharpe_1k
+1,"edge=2.0,skew=0.4",0.058017,0.057878,9.4e-05,1.0216,0.1286,1.0,91098.0,0.054445,9.3269

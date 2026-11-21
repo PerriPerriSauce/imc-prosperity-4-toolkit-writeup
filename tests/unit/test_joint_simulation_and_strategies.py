@@ -101,3 +101,51 @@ def test_options_strategy_handles_missing_and_empty_books() -> None:
         books={"VELVETFRUIT_EXTRACT": OrderBookL2("VELVETFRUIT_EXTRACT")},
     )
     assert strat.generate_orders(empty_snap) == []
+
+
+def test_arrival_sensitivity_propagates_fill_mode_and_wilson_bound() -> None:
+    """simulate_arrival_sensitivity must respect fill_mode='queue_aware' vs 'touch'."""
+    from prosperity_toolkit.simulation.joint_scenarios import wilson_ci_upper
+
+    cfgs = [
+        AssetScenarioConfig(
+            symbol="ASH_COATED_OSMIUM",
+            position_limit=80,
+            process=OrnsteinUhlenbeckParams(mu=10000.0, theta=0.1, sigma=1.9),
+            book=BotBookConfig(half_spread_l1=8.0, depth_l1=2, step_l2=2, depth_l2=4),
+            arrivals=TradeArrivalConfig(arrival_prob=0.3, min_size=1, max_size=3),
+        ),
+    ]
+    qa = simulate_arrival_sensitivity(
+        lambda: InventorySkewedMarketMaker(
+            [
+                MarketMakingConfig(
+                    "ASH_COATED_OSMIUM", position_limit=80, quote_size=5, half_spread=9.0
+                )
+            ]
+        ),
+        cfgs,
+        [0.3],
+        n_sessions=4,
+        n_steps=80,
+        fill_mode="queue_aware",
+        seed=5,
+    )[0.3]
+    tc = simulate_arrival_sensitivity(
+        lambda: InventorySkewedMarketMaker(
+            [
+                MarketMakingConfig(
+                    "ASH_COATED_OSMIUM", position_limit=80, quote_size=5, half_spread=9.0
+                )
+            ]
+        ),
+        cfgs,
+        [0.3],
+        n_sessions=4,
+        n_steps=80,
+        fill_mode="touch",
+        seed=5,
+    )[0.3]
+    # Under min_edge=9 > half_spread=8, we join or sit behind L1 queue -> touch >= queue_aware
+    assert tc.mean_pnl >= qa.mean_pnl
+    assert 0.10 < wilson_ci_upper(0, 30) < 0.14

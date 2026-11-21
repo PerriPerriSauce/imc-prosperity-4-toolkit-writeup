@@ -1,13 +1,17 @@
-"""Standalone IMC Prosperity 4 Round 4 submission trader.
+"""Standalone Prosperity 4 Round 4 competition submission trader.
 
-No external package dependencies outside `datamodel` and Python's standard library.
-Extends Round 3 spot + volatility-surface delta hedging with Counterparty Flow
-Intelligence verified in Round 4 IS telemetry:
-  - `Mark 67` aggressive buy prints on `VELVETFRUIT_EXTRACT` shift effective fair
-    value by `M67_BUMP=0.5` (decaying `0.80x` per tick), lifting undervalued asks
-    and widening resting asks to dodge permanent informed adverse selection.
-  - `HYDROGEL_PACK` wide-spread MM tuned at Round 4 IS plateau (`MM_EDGE=5.5,
-    MM_SKEW=0.08`, PBO=0.0571, DSR=0.9975).
+Economic rationale:
+- Retains the Round 3 Bayesian OU anchor on ``HYDROGEL_PACK`` and
+  ``VELVETFRUIT_EXTRACT`` plus Black-Scholes total-volatility option pricing
+  on ``VEV_4000..5500`` without spot delta hedging.
+- Layers strictly causal counterparty flow tilt from prior observed market
+  trades on ``VELVETFRUIT_EXTRACT`` (IS Days 1-2 causal decomposition):
+  * ``Mark 55`` BUY trades predict +2.46 XIRECs OU-adjusted drift over t+1..t+200 (t=4.07)
+  * ``Mark 14`` SELL trades predict +3.79 XIRECs OU-adjusted upward reversion (t=4.58)
+  * Opposite signs skew downward; ``Mark 67`` / ``Mark 49`` are excluded because
+    IS decomposition isolates their fill mark-out as a non-causal 1-tick bounce.
+- Default ``spot_scale=30.0, enter_band=10.0, flow_weight=1.5`` comes from the
+  strictly in-sample (Days 1 and 2) interior risk-adjusted plateau.
 """
 
 from __future__ import annotations
@@ -17,7 +21,9 @@ import math
 from statistics import NormalDist
 from typing import Any
 
-from datamodel import Order, OrderDepth, TradingState
+from datamodel import Order, OrderDepth, Symbol, TradingState
+
+_NORM = NormalDist(0.0, 1.0)
 
 POSITION_LIMITS: dict[str, int] = {
     "HYDROGEL_PACK": 200,
@@ -34,328 +40,344 @@ POSITION_LIMITS: dict[str, int] = {
     "VEV_6500": 300,
 }
 
-DEEP_ITM_STRIKES: tuple[tuple[str, float], ...] = (
-    ("VEV_4000", 4000.0),
-    ("VEV_4500", 4500.0),
-)
-OPTION_STRIKES: tuple[tuple[str, float], ...] = (
-    ("VEV_5200", 5200.0),
-    ("VEV_5300", 5300.0),
-    ("VEV_5400", 5400.0),
-    ("VEV_5500", 5500.0),
-)
-
-MM_EDGE: float = 5.5
-MM_SKEW: float = 0.08
-M67_BUMP: float = 0.5
-M67_DECAY: float = 0.80
-OPT_EDGE: float = 0.5
-HEDGE_BAND: float = 10.0
-
-_STD_NORM = NormalDist(0.0, 1.0)
+ACTIVE_STRIKES: tuple[int, ...] = (4000, 4500, 5000, 5100, 5200, 5300, 5400, 5500)
 
 
-def _popular_wall_mid(depth: OrderDepth) -> float | None:
-    """Extract midpoint of highest-volume resting bid and ask walls."""
-    if not depth.buy_orders or not depth.sell_orders:
-        return None
-    wall_bid = max(depth.buy_orders.items(), key=lambda kv: (abs(kv[1]), kv[0]))[0]
-    wall_ask = max(depth.sell_orders.items(), key=lambda kv: (abs(kv[1]), -kv[0]))[0]
-    return float(0.5 * (wall_bid + wall_ask))
-
-
-def _bs_call_total_v(spot: float, strike: float, total_v: float) -> tuple[float, float]:
-    """Price a call and return delta as a function of total vol v = sigma*sqrt(T)."""
-    if total_v <= 1e-6 or spot <= 0.0 or strike <= 0.0:
-        return max(0.0, spot - strike), (1.0 if spot > strike else 0.0)
+def _bs_call_total_v(spot: float, strike: float, total_v: float) -> float:
+    if spot <= 0.0:
+        return 0.0
+    if total_v <= 1e-6:
+        return max(0.0, spot - strike)
     d1 = (math.log(spot / strike) + 0.5 * total_v * total_v) / total_v
     d2 = d1 - total_v
-    delta = _STD_NORM.cdf(d1)
-    return spot * delta - strike * _STD_NORM.cdf(d2), delta
+    return spot * _NORM.cdf(d1) - strike * _NORM.cdf(d2)
 
 
-def _invert_total_v(price: float, spot: float, strike: float) -> float | None:
-    """Invert Black-Scholes total volatility v = sigma*sqrt(T) by bisection."""
-    intrinsic = max(0.0, spot - strike)
-    if spot <= 0.0 or strike <= 0.0 or price <= intrinsic + 0.2 or price >= spot:
+def _inv_total_v(price: float, spot: float, strike: float) -> float | None:
+    if spot <= 0.0:
+        return None
+    intr = max(0.0, spot - strike)
+    if price <= intr + 0.2 or price >= spot:
         return None
     lo, hi = 1e-4, 0.5
     for _ in range(28):
         mid = 0.5 * (lo + hi)
-        est, _ = _bs_call_total_v(spot, strike, mid)
-        if est < price:
-            lo = mid
-        else:
+        if _bs_call_total_v(spot, strike, mid) > price:
             hi = mid
+        else:
+            lo = mid
     return 0.5 * (lo + hi)
 
 
-def _load_state(raw_data: str) -> dict[str, Any]:
-    """Defensively decode JSON traderData including counterparty impulse memory."""
-    default: dict[str, Any] = {"fv": {}, "v": {}, "m67": 0.0}
-    if not raw_data:
-        return default
+def _wall_mid(order_depth: OrderDepth) -> float | None:
+    bids: dict[int, int] = {int(p): int(v) for p, v in order_depth.buy_orders.items() if v > 0}
+    asks: dict[int, int] = {int(p): int(v) for p, v in order_depth.sell_orders.items() if v < 0}
+    if not bids or not asks:
+        return None
+    wall_bid = max(bids.items(), key=lambda kv: (abs(kv[1]), kv[0]))[0]
+    wall_ask = max(asks.items(), key=lambda kv: (abs(kv[1]), -kv[0]))[0]
+    return 0.5 * (float(wall_bid) + float(wall_ask))
+
+
+def _load_state(raw: str) -> dict[str, Any]:
+    if not raw:
+        return {}
     try:
-        parsed = json.loads(raw_data)
-    except (ValueError, TypeError):
-        return default
-    if not isinstance(parsed, dict):
-        return default
-    m67_val = parsed.get("m67", 0.0)
-    return {
-        "fv": parsed.get("fv", {}) if isinstance(parsed.get("fv"), dict) else {},
-        "v": parsed.get("v", {}) if isinstance(parsed.get("v"), dict) else {},
-        "m67": float(m67_val) if isinstance(m67_val, (int, float)) else 0.0,
-    }
-
-
-def _place_mm_orders(
-    symbol: str,
-    depth: OrderDepth,
-    fv: float,
-    start_pos: int,
-    limit: int,
-    half_edge: float,
-    skew: float,
-    clip: int,
-    take_edge: float | None = None,
-) -> list[Order]:
-    """Construct simultaneous limit-clamped taker + penny-improving maker orders."""
-    orders: list[Order] = []
-    buy_cap = max(0, limit - start_pos)
-    sell_cap = max(0, limit + start_pos)
-    taken_buy = 0
-    taken_sell = 0
-
-    best_ask = min(depth.sell_orders.keys()) if depth.sell_orders else None
-    best_bid = max(depth.buy_orders.keys()) if depth.buy_orders else None
-
-    if take_edge is not None:
-        if best_ask is not None and best_ask <= fv - take_edge and buy_cap > 0:
-            for ask_px in sorted(depth.sell_orders.keys()):
-                if ask_px > fv - take_edge or buy_cap - taken_buy <= 0:
-                    break
-                qty = min(abs(depth.sell_orders[ask_px]), buy_cap - taken_buy)
-                if qty > 0:
-                    orders.append(Order(symbol, ask_px, qty))
-                    taken_buy += qty
-        if best_bid is not None and best_bid >= fv + take_edge and sell_cap > 0:
-            for bid_px in sorted(depth.buy_orders.keys(), reverse=True):
-                if bid_px < fv + take_edge or sell_cap - taken_sell <= 0:
-                    break
-                qty = min(abs(depth.buy_orders[bid_px]), sell_cap - taken_sell)
-                if qty > 0:
-                    orders.append(Order(symbol, bid_px, -qty))
-                    taken_sell += qty
-
-    rem_buy = max(0, buy_cap - taken_buy)
-    rem_sell = max(0, sell_cap - taken_sell)
-    res = fv - skew * start_pos
-
-    q_bid = min(math.floor(res - half_edge), best_bid + 1) if best_bid is not None else math.floor(
-        res - half_edge,
-    )
-    q_ask = max(math.ceil(res + half_edge), best_ask - 1) if best_ask is not None else math.ceil(
-        res + half_edge,
-    )
-    if best_ask is not None and q_bid >= best_ask:
-        q_bid = best_ask - 1
-    if best_bid is not None and q_ask <= best_bid:
-        q_ask = best_bid + 1
-
-    if q_bid < q_ask and q_bid > 0:
-        if rem_buy > 0:
-            orders.append(Order(symbol, q_bid, min(clip, rem_buy)))
-        if rem_sell > 0:
-            orders.append(Order(symbol, q_ask, -min(clip, rem_sell)))
-
-    return orders
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
 
 
 class Trader:
-    """Prosperity 4 Round 4 standalone counterparty-aware competition trader."""
+    """Prosperity 4 Round 4 Trader calibrated strictly on Days 1 and 2."""
 
-    def run(self, state: TradingState) -> tuple[dict[str, list[Order]], int, str]:
-        """Execute one Round 4 tick with Mark 67 flow gating and options hedging."""
-        result: dict[str, list[Order]] = {}
-        mem = _load_state(state.traderData)
-        fv_map: dict[str, float] = mem["fv"]
-        v_map: dict[str, float] = mem["v"]
+    def __init__(
+        self,
+        spot_scale: float = 30.0,
+        flow_weight: float = 1.5,
+        enter_band: float = 10.0,
+    ) -> None:
+        self.spot_scale = float(spot_scale)
+        self.flow_weight = float(flow_weight)
+        self.enter_band = float(enter_band)
+        self.h_n: int = 1500
+        self.h_sum: float = 1500.0 * 9991.0
+        self.s_n: int = 2500
+        self.s_sum: float = 2500.0 * 5250.0
+        self.flow: float = 0.0
+        self.last_trade_ts: int = -1
+        self.v_map: dict[str, float] = {}
 
-        # 1. HYDROGEL_PACK wide-spread MM (+/-200)
-        h_depth = state.order_depths.get("HYDROGEL_PACK")
-        if h_depth is not None:
-            h_obs = _popular_wall_mid(h_depth)
-            if h_obs is not None:
-                prev_h = float(fv_map.get("HYDROGEL_PACK", h_obs))
-                fv_map["HYDROGEL_PACK"] = 0.25 * h_obs + 0.75 * prev_h
-            if "HYDROGEL_PACK" in fv_map:
-                h_orders = _place_mm_orders(
-                    symbol="HYDROGEL_PACK",
-                    depth=h_depth,
-                    fv=float(fv_map["HYDROGEL_PACK"]),
-                    start_pos=int(state.position.get("HYDROGEL_PACK", 0)),
-                    limit=POSITION_LIMITS["HYDROGEL_PACK"],
-                    half_edge=MM_EDGE,
-                    skew=MM_SKEW,
-                    clip=60,
-                    take_edge=1.5,
+    def _hydrate_state(self, raw: str) -> None:
+        persisted = _load_state(raw)
+        if isinstance(persisted.get("h_n"), int) and persisted["h_n"] > 0:
+            self.h_n = persisted["h_n"]
+        if isinstance(persisted.get("h_sum"), (int, float)):
+            self.h_sum = float(persisted["h_sum"])
+        if isinstance(persisted.get("s_n"), int) and persisted["s_n"] > 0:
+            self.s_n = persisted["s_n"]
+        if isinstance(persisted.get("s_sum"), (int, float)):
+            self.s_sum = float(persisted["s_sum"])
+        if isinstance(persisted.get("flow"), (int, float)):
+            self.flow = float(persisted["flow"])
+        if isinstance(persisted.get("last_trade_ts"), int):
+            self.last_trade_ts = persisted["last_trade_ts"]
+        raw_v = persisted.get("v")
+        if isinstance(raw_v, dict):
+            for sym, val in raw_v.items():
+                if isinstance(sym, str) and isinstance(val, (int, float)) and val > 0.0:
+                    self.v_map.setdefault(sym, float(val))
+
+    def _trade_hydrogel(self, ob: OrderDepth, pos: int) -> list[Order]:
+        bids = {p: v for p, v in ob.buy_orders.items() if v > 0}
+        asks = {p: v for p, v in ob.sell_orders.items() if v < 0}
+        if not bids or not asks:
+            return []
+
+        wm = _wall_mid(ob)
+        if wm is not None:
+            self.h_n += 1
+            self.h_sum += wm
+        mu_h = self.h_sum / max(1, self.h_n)
+        if wm is None:
+            return []
+
+        dev_h = wm - mu_h
+        limit = POSITION_LIMITS["HYDROGEL_PACK"]
+        tgt = round(max(-1.0, min(1.0, -dev_h / 40.0)) * limit)
+        bc = max(0, limit - pos)
+        sc = max(0, limit + pos)
+        orders: list[Order] = []
+        tb = 0
+        ts_q = 0
+
+        if tgt > pos and dev_h <= -10.0:
+            need = min(tgt - pos, bc)
+            for ap in sorted(asks):
+                if ap <= mu_h - 4.0 and need > 0:
+                    q = min(abs(asks[ap]), need)
+                    if q > 0:
+                        orders.append(Order("HYDROGEL_PACK", int(ap), int(q)))
+                        tb += q
+                        need -= q
+        elif tgt < pos and dev_h >= 10.0:
+            need = min(pos - tgt, sc)
+            for bp in sorted(bids, reverse=True):
+                if bp >= mu_h + 4.0 and need > 0:
+                    q = min(abs(bids[bp]), need)
+                    if q > 0:
+                        orders.append(Order("HYDROGEL_PACK", int(bp), -int(q)))
+                        ts_q += q
+                        need -= q
+
+        proj = pos + tb - ts_q
+        fv_h = 0.35 * wm + 0.65 * mu_h
+        res = fv_h - 0.05 * (proj - tgt)
+        bb = max(bids)
+        ba = min(asks)
+        qb = min(math.floor(res - 4.5), bb + 1)
+        qa = max(math.ceil(res + 4.5), ba - 1)
+        if qb >= ba:
+            qb = ba - 1
+        if qa <= bb:
+            qa = bb + 1
+        if qb < qa and qb > 0:
+            if bc - tb > 0:
+                orders.append(Order("HYDROGEL_PACK", int(qb), int(min(60, bc - tb))))
+            if sc - ts_q > 0:
+                orders.append(Order("HYDROGEL_PACK", int(qa), -int(min(60, sc - ts_q))))
+        return orders
+
+    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
+        """Generate competition-compliant Round 4 orders."""
+        if self.h_n == 1500 and self.s_n == 2500 and not self.v_map:
+            self._hydrate_state(getattr(state, "traderData", ""))
+
+        result: dict[Symbol, list[Order]] = {}
+        order_depths = getattr(state, "order_depths", {}) or {}
+        positions = getattr(state, "position", {}) or {}
+        market_trades = getattr(state, "market_trades", {}) or {}
+        now_ts = int(getattr(state, "timestamp", 0) or 0)
+
+        h_ob = order_depths.get("HYDROGEL_PACK")
+        if h_ob is not None:
+            h_orders = self._trade_hydrogel(h_ob, int(positions.get("HYDROGEL_PACK", 0)))
+            if h_orders:
+                result["HYDROGEL_PACK"] = h_orders
+
+        s_ob = order_depths.get("VELVETFRUIT_EXTRACT")
+        s_wm = _wall_mid(s_ob) if s_ob is not None else None
+        if s_ob is not None and s_wm is not None:
+            s_bids = {p: v for p, v in s_ob.buy_orders.items() if v > 0}
+            s_asks = {p: v for p, v in s_ob.sell_orders.items() if v < 0}
+            if s_bids and s_asks:
+                self.s_n += 1
+                self.s_sum += s_wm
+                mu_s = self.s_sum / max(1, self.s_n)
+
+                flow_sig = self.flow * 0.985
+                max_seen_ts = self.last_trade_ts
+                if self.flow_weight > 0.0:
+                    for tr in market_trades.get("VELVETFRUIT_EXTRACT", []):
+                        tr_ts = int(getattr(tr, "timestamp", -1))
+                        # Strictly process causal prior-tick prints without re-counting.
+                        if tr_ts >= now_ts or tr_ts <= self.last_trade_ts:
+                            continue
+                        if tr_ts > max_seen_ts:
+                            max_seen_ts = tr_ts
+                        buyer = getattr(tr, "buyer", "") or ""
+                        seller = getattr(tr, "seller", "") or ""
+                        if seller == "Mark 14" or buyer == "Mark 55":
+                            flow_sig += self.flow_weight
+                        if buyer == "Mark 14" or seller == "Mark 55":
+                            flow_sig -= self.flow_weight
+                self.last_trade_ts = max_seen_ts
+                flow_sig = max(-8.0, min(8.0, flow_sig))
+                self.flow = flow_sig
+
+                mu_eff = mu_s + flow_sig
+                dev_s = s_wm - mu_eff
+                tgt_frac = (
+                    0.0
+                    if abs(dev_s) <= 2.0
+                    else max(-1.0, min(1.0, -dev_s / self.spot_scale))
                 )
-                if h_orders:
-                    result["HYDROGEL_PACK"] = h_orders
 
-        # 2. VELVETFRUIT_EXTRACT wall-mid FV + Mark 67 informed-flow telemetry
-        s_depth = state.order_depths.get("VELVETFRUIT_EXTRACT")
-        if s_depth is None:
-            return result, 0, json.dumps(mem, separators=(",", ":"))
-        s_obs = _popular_wall_mid(s_depth)
-        if s_obs is not None:
-            prev_s = float(fv_map.get("VELVETFRUIT_EXTRACT", s_obs))
-            fv_map["VELVETFRUIT_EXTRACT"] = 0.45 * s_obs + 0.55 * prev_s
-        if "VELVETFRUIT_EXTRACT" not in fv_map:
-            return result, 0, json.dumps(mem, separators=(",", ":"))
+                s_pos = int(positions.get("VELVETFRUIT_EXTRACT", 0))
+                s_limit = POSITION_LIMITS["VELVETFRUIT_EXTRACT"]
+                s_tgt = round(tgt_frac * s_limit)
+                bc = max(0, s_limit - s_pos)
+                sc = max(0, s_limit + s_pos)
+                s_orders: list[Order] = []
+                tb = 0
+                ts_q = 0
 
-        sfv = float(fv_map["VELVETFRUIT_EXTRACT"])
-        v_trades = state.market_trades.get("VELVETFRUIT_EXTRACT", [])
-        if any(getattr(tr, "buyer", "") == "Mark 67" for tr in v_trades):
-            m67_signal = M67_BUMP
-        else:
-            m67_signal = float(mem.get("m67", 0.0)) * M67_DECAY
-        mem["m67"] = m67_signal
-        sfv_eff = sfv + m67_signal
+                if s_tgt > s_pos and (
+                    dev_s <= -self.enter_band or (s_pos < 0 and dev_s <= 2.0)
+                ):
+                    need = min(s_tgt - s_pos, bc)
+                    for ap in sorted(s_asks):
+                        if ap <= mu_eff + 1.0 and need > 0:
+                            q = min(abs(s_asks[ap]), need)
+                            if q > 0:
+                                s_orders.append(Order("VELVETFRUIT_EXTRACT", int(ap), int(q)))
+                                tb += q
+                                need -= q
+                elif s_tgt < s_pos and (
+                    dev_s >= self.enter_band or (s_pos > 0 and dev_s >= -2.0)
+                ):
+                    need = min(s_pos - s_tgt, sc)
+                    for bp in sorted(s_bids, reverse=True):
+                        if bp >= mu_eff - 1.0 and need > 0:
+                            q = min(abs(s_bids[bp]), need)
+                            if q > 0:
+                                s_orders.append(Order("VELVETFRUIT_EXTRACT", int(bp), -int(q)))
+                                ts_q += q
+                                need -= q
 
-        net_opt_delta = 0.0
+                proj = s_pos + tb - ts_q
+                s_res = (0.25 * s_wm + 0.75 * mu_eff) - 0.02 * (proj - s_tgt)
+                s_bb = max(s_bids)
+                s_ba = min(s_asks)
+                qb = min(math.floor(s_res - 1.5), s_bb + 1)
+                qa = max(math.ceil(s_res + 1.5), s_ba - 1)
+                if qb >= s_ba:
+                    qb = s_ba - 1
+                if qa <= s_bb:
+                    qa = s_bb + 1
+                if qb < qa and qb > 0:
+                    if bc - tb > 0:
+                        s_orders.append(
+                            Order("VELVETFRUIT_EXTRACT", int(qb), int(min(60, bc - tb))),
+                        )
+                    if sc - ts_q > 0:
+                        s_orders.append(
+                            Order("VELVETFRUIT_EXTRACT", int(qa), -int(min(60, sc - ts_q))),
+                        )
+                if s_orders:
+                    result["VELVETFRUIT_EXTRACT"] = s_orders
 
-        # 3. Deep-ITM calls (VEV_4000 & VEV_4500) anchored to sfv_eff
-        for sym, strike in DEEP_ITM_STRIKES:
-            ob = state.order_depths.get(sym)
-            if ob is None:
-                continue
-            pos = int(state.position.get(sym, 0))
-            net_opt_delta += float(pos)
-            deep_orders = _place_mm_orders(
-                symbol=sym,
-                depth=ob,
-                fv=sfv_eff - strike,
-                start_pos=pos,
-                limit=POSITION_LIMITS[sym],
-                half_edge=2.5,
-                skew=0.025,
-                clip=40,
-                take_edge=2.0,
-            )
-            if deep_orders:
-                result[sym] = deep_orders
+                for strike in ACTIVE_STRIKES:
+                    sym = f"VEV_{strike}"
+                    v_ob = order_depths.get(sym)
+                    if v_ob is None:
+                        continue
+                    v_bids = {p: v for p, v in v_ob.buy_orders.items() if v > 0}
+                    v_asks = {p: v for p, v in v_ob.sell_orders.items() if v < 0}
+                    if not v_bids or not v_asks:
+                        continue
+                    v_bb = max(v_bids)
+                    v_ba = min(v_asks)
+                    mid_opt = 0.5 * (v_bb + v_ba)
 
-        # 4. Option chain (VEV_5200..5500): self-calibrating BS total-vol quoting
-        for sym, strike in OPTION_STRIKES:
-            ob = state.order_depths.get(sym)
-            if ob is None or not ob.buy_orders or not ob.sell_orders:
-                continue
-            best_bid = max(ob.buy_orders.keys())
-            best_ask = min(ob.sell_orders.keys())
-            mid_opt = 0.5 * (best_bid + best_ask)
-            v_obs = _invert_total_v(mid_opt, sfv_eff, strike)
-            if v_obs is not None:
-                prev_v = float(v_map.get(sym, v_obs))
-                v_map[sym] = 0.05 * v_obs + 0.95 * prev_v
-            if sym not in v_map:
-                continue
+                    if strike <= 4500:
+                        fair_mu = max(0.0, mu_eff - strike)
+                        fair_now = max(0.0, s_wm - strike)
+                    else:
+                        v_obs = _inv_total_v(mid_opt, s_wm, float(strike))
+                        if v_obs is not None:
+                            self.v_map[sym] = 0.02 * v_obs + 0.98 * self.v_map.get(sym, v_obs)
+                        if sym not in self.v_map:
+                            continue
+                        fair_mu = _bs_call_total_v(mu_eff, float(strike), self.v_map[sym])
+                        fair_now = _bs_call_total_v(s_wm, float(strike), self.v_map[sym])
 
-            fair_opt, delta = _bs_call_total_v(sfv_eff, strike, float(v_map[sym]))
-            pos = int(state.position.get(sym, 0))
-            net_opt_delta += float(pos) * delta
+                    pos = int(positions.get(sym, 0))
+                    o_limit = POSITION_LIMITS[sym]
+                    sp_opt = v_ba - v_bb
+                    o_tgt = round(tgt_frac * o_limit)
+                    obc = max(0, o_limit - pos)
+                    osc = max(0, o_limit + pos)
+                    o_orders: list[Order] = []
+                    otb = 0
+                    ots = 0
+                    req = max(1.0, 0.25 * sp_opt)
 
-            buy_cap = max(0, POSITION_LIMITS[sym] - pos)
-            sell_cap = max(0, POSITION_LIMITS[sym] + pos)
-            tb = 0
-            ts_q = 0
-            opt_orders: list[Order] = []
+                    if o_tgt > pos and v_ba <= fair_mu - req:
+                        need = min(o_tgt - pos, obc)
+                        for ap in sorted(v_asks):
+                            if ap <= fair_mu - req and need > 0:
+                                q = min(abs(v_asks[ap]), need)
+                                if q > 0:
+                                    o_orders.append(Order(sym, int(ap), int(q)))
+                                    otb += q
+                                    need -= q
+                    elif o_tgt < pos and v_bb >= fair_mu + req:
+                        need = min(pos - o_tgt, osc)
+                        for bp in sorted(v_bids, reverse=True):
+                            if bp >= fair_mu + req and need > 0:
+                                q = min(abs(v_bids[bp]), need)
+                                if q > 0:
+                                    o_orders.append(Order(sym, int(bp), -int(q)))
+                                    ots += q
+                                    need -= q
 
-            if best_ask <= fair_opt - 1.5 and buy_cap > 0:
-                q = min(10, abs(ob.sell_orders[best_ask]), buy_cap)
-                if q > 0:
-                    opt_orders.append(Order(sym, best_ask, q))
-                    tb = q
-            if best_bid >= fair_opt + 1.5 and sell_cap > 0:
-                q = min(10, abs(ob.buy_orders[best_bid]), sell_cap)
-                if q > 0:
-                    opt_orders.append(Order(sym, best_bid, -q))
-                    ts_q = q
+                    oproj = pos + otb - ots
+                    ores = (0.25 * fair_now + 0.75 * fair_mu) - 0.004 * (oproj - o_tgt)
+                    oqb = min(math.floor(ores - 1.0), v_bb + 1)
+                    oqa = max(math.ceil(ores + 1.0), v_ba - 1)
+                    if oqb >= v_ba:
+                        oqb = v_ba - 1
+                    if oqa <= v_bb:
+                        oqa = v_bb + 1
+                    if oqb < oqa and oqb > 0:
+                        if obc - otb > 0:
+                            o_orders.append(Order(sym, int(oqb), int(min(40, obc - otb))))
+                        if osc - ots > 0:
+                            o_orders.append(Order(sym, int(oqa), -int(min(40, osc - ots))))
+                    if o_orders:
+                        result[sym] = o_orders
 
-            res_opt = fair_opt - 0.005 * pos
-            q_bid = min(math.floor(res_opt - OPT_EDGE), best_bid + 1)
-            q_ask = max(math.ceil(res_opt + OPT_EDGE), best_ask - 1)
-            if q_bid >= best_ask:
-                q_bid = best_ask - 1
-            if q_ask <= best_bid:
-                q_ask = best_bid + 1
-            if q_bid < q_ask and q_bid > 0:
-                if buy_cap - tb > 0:
-                    opt_orders.append(Order(sym, q_bid, min(15, buy_cap - tb)))
-                if sell_cap - ts_q > 0:
-                    opt_orders.append(Order(sym, q_ask, -min(15, sell_cap - ts_q)))
-
-            if opt_orders:
-                result[sym] = opt_orders
-
-        # 5. Delta hedge + Mark 67 ask-guarded spot MM on VELVETFRUIT_EXTRACT
-        s_pos = int(state.position.get("VELVETFRUIT_EXTRACT", 0))
-        tot_delta = float(s_pos) + net_opt_delta
-        s_buy_cap = max(0, POSITION_LIMITS["VELVETFRUIT_EXTRACT"] - s_pos)
-        s_sell_cap = max(0, POSITION_LIMITS["VELVETFRUIT_EXTRACT"] + s_pos)
-        s_orders: list[Order] = []
-        hb = 0
-        hs = 0
-
-        s_best_ask = min(s_depth.sell_orders.keys()) if s_depth.sell_orders else None
-        s_best_bid = max(s_depth.buy_orders.keys()) if s_depth.buy_orders else None
-
-        if tot_delta < -HEDGE_BAND and s_best_ask is not None and s_best_ask <= sfv_eff + 2.5:
-            q = min(math.floor(-tot_delta), abs(s_depth.sell_orders[s_best_ask]), s_buy_cap)
-            if q > 0:
-                s_orders.append(Order("VELVETFRUIT_EXTRACT", s_best_ask, q))
-                hb = q
-        elif tot_delta > HEDGE_BAND and s_best_bid is not None and s_best_bid >= sfv_eff - 2.5:
-            q = min(math.floor(tot_delta), abs(s_depth.buy_orders[s_best_bid]), s_sell_cap)
-            if q > 0:
-                s_orders.append(Order("VELVETFRUIT_EXTRACT", s_best_bid, -q))
-                hs = q
-
-        if (
-            m67_signal > 0.6
-            and s_best_ask is not None
-            and s_best_ask <= sfv_eff + 0.2
-            and s_buy_cap - hb > 0
-        ):
-            q = min(abs(s_depth.sell_orders[s_best_ask]), s_buy_cap - hb)
-            if q > 0:
-                s_orders.append(Order("VELVETFRUIT_EXTRACT", s_best_ask, q))
-                hb += q
-
-        s_res = sfv_eff - 0.03 * tot_delta
-        ask_guard = 1.5 + (0.8 * m67_signal if m67_signal > 0.4 else 0.0)
-        sq_bid = (
-            min(math.floor(s_res - 1.5), s_best_bid + 1)
-            if s_best_bid is not None
-            else math.floor(s_res - 1.5)
+        next_data = json.dumps(
+            {
+                "h_n": self.h_n,
+                "h_sum": round(self.h_sum, 4),
+                "s_n": self.s_n,
+                "s_sum": round(self.s_sum, 4),
+                "flow": round(self.flow, 6),
+                "last_trade_ts": self.last_trade_ts,
+                "v": {k: round(val, 6) for k, val in self.v_map.items()},
+            },
         )
-        sq_ask = (
-            max(math.ceil(s_res + ask_guard), s_best_ask - 1)
-            if s_best_ask is not None
-            else math.ceil(s_res + ask_guard)
-        )
-        if s_best_ask is not None and sq_bid >= s_best_ask:
-            sq_bid = s_best_ask - 1
-        if s_best_bid is not None and sq_ask <= s_best_bid:
-            sq_ask = s_best_bid + 1
-        if sq_bid < sq_ask and sq_bid > 0:
-            if s_buy_cap - hb > 0:
-                s_orders.append(Order("VELVETFRUIT_EXTRACT", sq_bid, min(35, s_buy_cap - hb)))
-            if s_sell_cap - hs > 0:
-                s_orders.append(Order("VELVETFRUIT_EXTRACT", sq_ask, -min(35, s_sell_cap - hs)))
-
-        if s_orders:
-            result["VELVETFRUIT_EXTRACT"] = s_orders
-
-        return result, 0, json.dumps(mem, separators=(",", ":"))
+        return result, 0, next_data

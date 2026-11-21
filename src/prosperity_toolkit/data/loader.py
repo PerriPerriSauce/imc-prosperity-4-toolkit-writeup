@@ -57,6 +57,10 @@ class DataLoader:
         df = SemicolonCSVParser.parse_prices_csv(filepath)
         cleaned = DataNormalizer.clean_prices(df)
         DataIntegrityValidator.validate_price_dataframe(cleaned)
+        dup_count = DataIntegrityValidator.detect_price_duplicates(cleaned)
+        if dup_count > 0:
+            msg = f"Found {dup_count} duplicate (timestamp, product) rows in {filepath}"
+            raise DataValidationError(msg)
         if check_continuity:
             DataIntegrityValidator.validate_timestamp_continuity(cleaned)
         return cleaned

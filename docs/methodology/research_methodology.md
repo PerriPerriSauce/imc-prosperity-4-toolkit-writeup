@@ -1,36 +1,33 @@
 # Quantitative Research Methodology
 
-Every strategy in this repository follows a disciplined five-step scientific workflow designed to separate durable structural alpha from finite-sample noise and post-hoc rationalization:
+Every strategy in this repository follows a disciplined five-step scientific workflow designed to separate durable structural alpha from finite-sample noise, look-ahead bias, and post-hoc rationalization:
 
 ```mermaid
 flowchart TD
-    Obs["1. Descriptive EDA & Book Audit<br/>(Spreads, missing books, trade locations)"] --> Hyp["2. Microstructural Hypothesis<br/>(Why does edge exist? Who is counterparty?)"]
-    Hyp --> Model["3. Explicit Mathematical Model<br/>(OU, affine drift, total-vol BS, cointegration)"]
-    Model --> Gate["4. In-Sample Validation Gate<br/>(2D plateau, N_eff, CSCV PBO < 0.15, DSR >= 0.95)"]
-    Gate --> OOS["5. Single-Pass OOS, Block Bootstrap & MC<br/>(Held-out final day + calibrated VaR/CVaR)"]
+    Obs["1. Descriptive EDA & Book Audit<br/>(Spreads, missing books, trade causality)"] --> Hyp["2. Microstructural Hypothesis<br/>(Economic mechanism & counterparty identity)"]
+    Hyp --> Model["3. Explicit Mathematical Model<br/>(OU, affine drift, total-vol BS, lag beta)"]
+    Model --> Gate["4. In-Sample Validation Gate<br/>(Interior 3x3 plateau, N_eff, DSR_block, CSCV)"]
+    Gate --> OOS["5. Single-Pass OOS, Block Bootstrap & Stressed MC<br/>(Held-out terminal day + adverse stress & Wilson bounds)"]
 ```
 
 ## 1. Core Methodological Principles
 
 ### Data Integrity Before Alpha
-No return series, correlation, or backtest is trusted until raw book completeness and sign conventions are verified. Inspecting raw Round 1–2 CSVs revealed `7.5%–8.0%` one-sided books and `14–38` empty books per day (`mid_price == 0.0`). Ignoring those missing-book regimes originally produced spurious $\Delta \text{mid}$ lag-1 jumps and a phantom `818,356` XIRECS drawdown in early testing ([`postmortem.md`](../postmortem.md), `PM-001`). Similarly, deep-OTM Round 3–4 call vouchers (`VEV_6000`, `VEV_6500`) generate `182–253` zero-price prints/day when takers hit `0`-tick bids, requiring explicit non-zero/two-sided filtering prior to volatility calibration.
+No return series, correlation, or backtest is trusted until raw book completeness, duplicate structure, and sign conventions are verified. Auditing all `34` raw CSVs exposed `~7.5%` one-sided books and `13–22` empty ticks/asset/day in Rounds 1–2 (`mid_price == 0.0`), zero-price `VEV_6000/6500` prints in Rounds 3–4, and byte-identical Round 3 / Round 4 price archives on `Day 1–2`.
 
-### Distinguishing Correlation from Causation
-A statistically significant correlation ($p < 10^{-100}$) does not automatically constitute directional predictive alpha:
-- **Empirical Case (`EMERALDS` & `ASH_COATED_OSMIUM`)**: Order Book Imbalance ($\text{OBI}_t$) correlates strongly with future mid-price changes ($r \approx 0.52\text{–}0.64$ across horizons $h \in \{1, 5, 10\}$).
-- **Root Mechanism**: Rather than signaling permanent fair-value discovery, thin inside-spread bot quotes temporarily displace `mid_price` away from $FV_t$ while shrinking L1 volume on that side; once those thin quotes fill or cancel, `mid_price` snaps back to the resting bot walls. Modeling structural wall midpoints (`_popular_wall_mid`) directly captures that insight instead of chasing L1 noise.
-- **Cross-Asset Correlation vs. Cointegration (`Round 5`)**: `SNACKPACK_PISTACHIO`, `STRAWBERRY`, and `RASPBERRY` co-move at `0.927` difference correlation yet rotate level eigenvector weights sharply between `Day 2` and `Day 4`, disqualifying static 3-leg hedge ratios relative to exact `PEBBLES` constant-sum parity (`50,000 ± 2.82`, condition ratio $> 1.66 \times 10^6$).
+### Distinguishing Correlation from Causation (and Rejecting False Positives)
+A large $t$-statistic or tight structural invariant does not automatically yield tradeable alpha:
+- **Quote-Jitter OBI (`EMERALDS` & `ASH_COATED_OSMIUM`)**: Raw $\text{OBI}_t$ correlates at $r \approx 0.52\text{–}0.59$ with short-horizon mid moves because thin inside-spread quotes briefly pull L1 mid away from deep resting bot walls (`_popular_wall_mid`) before snapping back.
+- **1-Tick Bounce vs. Causal Counterparty Flow (`Round 4`)**: Pooled `t=0 -> t+50` mark-outs falsely elevated `Mark 67` BUY (`+1.924` at `t -> t+1`, only `+0.113` at `t+1 -> t+200`, `OU-adj t = 1.56`), whereas causal post-execution tests isolated `Mark 14` SELL (`+3.788`, `t = 4.58`) and `Mark 55` BUY (`+2.460`, `t = 4.07`).
+- **Sub-Spread Constant-Sum (`Round 5 Pebbles`)**: $\sum_{i=1}^5 P_i = 50{,}000 \pm 2.82$ (`ADF t = -70.16`) is a verified statistical invariant, yet its `2.82`-tick standard deviation sits strictly inside the `12–14` tick 5-leg touch spread—meaning IOC crossing is unprofitable and was pruned.
 
 ### Strict Distinction of Knowledge Layers
-To maintain intellectual honesty across research notes and candidate evaluations, every report separates:
-1. **Observed Data**: Direct measurements from immutable CSVs (e.g., `4,199` two-sided trade prints in Round 0–1, `165` informed `Mark 67` prints in Round 4 IS, three synchronized Poisson pulse clusters in Round 5).
-2. **Estimated Parameters**: Statistics fitted strictly on calibration splits (`Day -2` & `-1` R1, `Day -1` & `0` R2, `Day 0` & `1` R3, `Day 1` & `2` R4, `Day 2` & `3` R5), such as `ASH_COATED_OSMIUM` OU $\hat{\theta} \in [0.085, 0.135]$ and `INTARIAN_PEPPER_ROOT` drift $+0.10$/step.
-3. **Model Assumptions**: Position limits (`±80` R2, `±200/300` R3–R4, `±10` R5 verified across multiple public Prosperity 4 backtester archives; `±20` stressed explicitly on Round 1), queue-matching rules, and Gaussian/Poisson scenario generators.
-4. **Simulated Results**: Single-pass held-out chronological replay (`Day 0`–`Day 4`) and Monte Carlo PnL, drawdown, Sharpe, and $\text{CVaR}_{95}$ distributions.
-5. **Actual Competition Results**: None claimed unless directly evidenced by official exchange submission logs; public competition placements referenced as external context are always flagged explicitly.
+Every document and table distinguishes five separate knowledge layers:
+1. **Official Live Competition Results**: Realized contest scores and placements by Team `63-bit integers` (`60th Worldwide`, `8th Australia`, `13th APAC`; Phase 1 `+521,181`, Phase 2 **`+700,334`**; archived in [`competition_results.csv`](../../reports/tables/competition_results.csv)).
+2. **Observed Data**: Immutable raw CSVs verified against [`prosperity4_manifest.json`](../../data/manifests/prosperity4_manifest.json).
+3. **Estimated Parameters**: Statistics fitted strictly on calibration splits (`Day -2..-1` R1, `Day -1..0` R2, `Day 0..1` R3, `Day 1..2` R4, `Day 2..3` R5).
+4. **Post-Contest Simulated Results**: Held-out OOS historical replays under strict causal `t - 100` `queue_aware` matching and stressed Monte Carlo ensembles (`N = 40`).
+5. **Ex-Ante Manual Models vs. Realized Payouts**: Closed-form/Bayesian manual formulations ([`MANUAL_CHALLENGES.md`](../manual/MANUAL_CHALLENGES.md)) paired against live realized manual totals (`+524,070` across R1–R5).
 
 ### Baseline Benchmarking & Ablation Discipline
-Every proposed refinement must earn its complexity through controlled ablation on held-out data (`EXP-R1-001` through `EXP-R5-001`):
-- **Null Baseline (`NoOpBaseline`)**: Verifies zero leakage and zero phantom accounting PnL.
-- **Unhedged / Uncalibrated Baselines**: Expose inventory drift bleed (`SymmetricMM_80` `-20,294.50` OOS R2), fixed-TTE options mispricing (`OptionsVolatilityContract` `-7,604.00` OOS R3), and EMA lag toxicity (`EmaSymmetricMM_All50` `29,130.00` DD in R5).
-- **Refined Submissions**: Evaluated only once against held-out final days after clearing `3x3` plateau checks, `CSCV PBO < 0.15`, and `DSR >= 0.95`.
+Every production refinement earns its complexity against simple baselines (`NoOpBaseline`, `SymmetricMM`, `SymmetricMM_80`, `OptionsVolatilityContract`, `Round3NoFlow`, `EmaSymmetricMM_All50`, `Round5NoLeadLag`) under all three fill modes (`conservative`, `queue_aware`, `touch`).

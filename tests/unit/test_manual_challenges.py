@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from prosperity_toolkit.analysis.manual_challenges import (
@@ -181,17 +182,38 @@ def test_round4_aether_crystal_exotic_mc_and_identities() -> None:
     bin_res = price_aether_crystal_contract(bin_spec, spot=spot, n_paths=30_000, seed=7)
     ch_res = price_aether_crystal_contract(chooser_spec, spot=spot, n_paths=30_000, seed=7)
 
-    assert abs(call_res.fair_value - bs_call) < 0.12
-    # Put-call parity at K=S0 under martingale measure
-    assert abs(call_res.fair_value - put_res.fair_value) < 0.05
+    assert abs(call_res.fair_value - bs_call) < 1e-10
+    # Exact Put-Call Parity at K=S0 under zero rate (zero MC sampling discrepancy)
+    assert call_res.fair_value == pytest.approx(put_res.fair_value, abs=1e-12)
     # Knock-out put strictly dominated by same-strike vanilla put
     assert 0.0 <= ko_res.knockout_prob < 1.0
     assert ko_res.fair_value < put_res.fair_value
     assert 0.0 < bin_res.fair_value < 100.0
-    # Chooser option dominates a simple European vanilla at the same strike
+    # Exact Rubinstein (1991) chooser exceeds vanilla at same strike
     assert ch_res.fair_value > call_res.fair_value
+    assert ch_res.std_error == 0.0
     assert 0.0 < call_res.delta_fd < 1.0
     assert -1.0 < put_res.delta_fd < 0.0
+
+    # Day-T realized chooser payoff std must strictly exceed Day-tc conditional BS std
+    from prosperity_toolkit.analysis.manual_challenges import _bs_price, _pathwise_payoffs
+
+    rng = np.random.default_rng(7)
+    paths = spot * np.exp(
+        np.cumsum(-0.5 * step_sigma**2 + step_sigma * rng.standard_normal((4000, 56)), axis=1)
+    )
+    realized_pays = _pathwise_payoffs(chooser_spec, spot, step_sigma, paths, 252.0)
+    assert abs(float(np.mean(realized_pays)) - ch_res.fair_value) < 0.6
+    ann_v = step_sigma * math.sqrt(steps_per_day * 252.0)
+    rem_yr = 7.0 / 252.0
+    cond_tc = np.array([
+        max(
+            _bs_price(float(sc), 50.0, rem_yr, ann_v, True),
+            _bs_price(float(sc), 50.0, rem_yr, ann_v, False),
+        )
+        for sc in paths[:, 27]
+    ])
+    assert float(np.std(realized_pays, ddof=1)) > float(np.std(cond_tc, ddof=1)) + 1.0
 
 
 def test_round5_extra_extra_kkt_complementarity() -> None:
@@ -273,15 +295,19 @@ def test_advanced_manual_extensions_rounds_1_to_5() -> None:
         ExoticContractSpec(
             name="AC_50_C15", kind="vanilla_call", strike=50.0, horizon_days=15.0, ask_price=11.92
         ),
+        ExoticContractSpec(
+            name="AC_50_P15", kind="vanilla_put", strike=50.0, horizon_days=15.0, ask_price=12.00
+        ),
     ]
     bounds = {
         "AC_50_CO": (-50.0, 50.0),
         "AC_40_BP": (-50.0, 50.0),
         "AC_45_KO": (-500.0, 500.0),
         "AC_50_C15": (-100.0, 100.0),
+        "AC_50_P15": (-100.0, 100.0),
     }
     port = solve_round4_exotic_portfolio(
-        specs, lot_bounds=bounds, spot=50.0, annual_vol=2.51, n_paths=12_000, risk_aversion=0.004
+        specs, lot_bounds=bounds, spot=50.0, annual_vol=2.51, n_paths=12_000, risk_aversion=0.0005
     )
     assert port.contract_edges["AC_50_CO"] < 0.0
     assert port.contract_edges["AC_40_BP"] < 0.0

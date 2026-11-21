@@ -2,40 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 
 from prosperity_toolkit.core.exceptions import PositionLimitExceededError
-from prosperity_toolkit.core.models import OrderRequest, Timestamp
+from prosperity_toolkit.core.models import OrderRequest, Position, Symbol, Timestamp
 from prosperity_toolkit.execution.fills import FillEvent
 from prosperity_toolkit.execution.simulator import ExecutionSimulator
 from prosperity_toolkit.market.market_state import MarketStateSnapshot
 from prosperity_toolkit.market.order_book import OrderBookL2
 from prosperity_toolkit.market.order_flow import TradePrint
 from prosperity_toolkit.strategies.base import BaseStrategy
-
-
-def _extract_book(row: pd.Series[object], symbol: str) -> OrderBookL2:
-    """Construct an OrderBookL2 from a single normalized price DataFrame row."""
-    bids: dict[int, int] = {}
-    asks: dict[int, int] = {}
-
-    for lvl in (1, 2, 3):
-        bp = row.get(f"bid_price_{lvl}")
-        bv = row.get(f"bid_volume_{lvl}")
-        if pd.notna(bp) and pd.notna(bv):
-            bids[int(bp)] = int(bv)
-
-        ap = row.get(f"ask_price_{lvl}")
-        av = row.get(f"ask_volume_{lvl}")
-        if pd.notna(ap) and pd.notna(av):
-            # Prosperity convention: sell_orders quantities are negative
-            asks[int(ap)] = -abs(int(av))
-
-    book = OrderBookL2(symbol=symbol)
-    book.set_depth(bids=bids, asks=asks)
-    return book
 
 
 def _optional_col(
@@ -156,7 +135,7 @@ def build_snapshots_from_dataframes(
 
 
 class HistoricalReplayLoop:
-    """Manages sequential feed of historical market states."""
+    """Manages sequential feed of historical market states with strict temporal causality."""
 
     def __init__(
         self,
@@ -170,9 +149,27 @@ class HistoricalReplayLoop:
         self,
         strategy: BaseStrategy,
         state: MarketStateSnapshot,
+        positions: Mapping[Symbol, Position] | None = None,
+        prior_market_trades: Mapping[Symbol, list[TradePrint]] | None = None,
+        prior_own_trades: Mapping[Symbol, list[TradePrint]] | None = None,
     ) -> tuple[Timestamp, list[OrderRequest], list[FillEvent]]:
-        """Execute a single timestamp step in the replay."""
-        orders = strategy.generate_orders(state)
+        """Execute a single causal timestamp step in the replay.
+
+        The strategy sees order books at `state.timestamp` together with market/own
+        trades from the *prior* interval (never same-tick `state.market_trades`).
+        Submitted resting orders are then matched against incoming `state.market_trades`
+        against the post-taker residual book.
+        """
+        eff_positions = dict(positions) if positions is not None else dict(state.positions)
+        decision_state = MarketStateSnapshot(
+            timestamp=state.timestamp,
+            books=state.books,
+            positions=eff_positions,
+            market_trades=dict(prior_market_trades) if prior_market_trades is not None else {},
+            own_trades=dict(prior_own_trades) if prior_own_trades is not None else {},
+            trader_data=state.trader_data,
+        )
+        orders = strategy.generate_orders(decision_state)
         fills: list[FillEvent] = []
         orders_by_sym: dict[str, list[OrderRequest]] = {}
         for order in orders:
@@ -183,7 +180,7 @@ class HistoricalReplayLoop:
             if not sym_orders:
                 continue
 
-            curr_pos = state.get_position(symbol)
+            curr_pos = eff_positions.get(symbol, 0)
             limit = self.simulator.position_limits.get(symbol, 1000)
 
             try:
@@ -203,11 +200,12 @@ class HistoricalReplayLoop:
 
             sym_trades = state.market_trades.get(symbol, [])
             if resting and sym_trades:
+                residual_book = self.simulator.remaining_book_after_taker(book, taker_fills)
                 maker_fills = self.simulator.match_maker_orders(
                     state.timestamp,
                     resting,
                     sym_trades,
-                    book=book,
+                    book=residual_book,
                 )
                 fills.extend(maker_fills)
 

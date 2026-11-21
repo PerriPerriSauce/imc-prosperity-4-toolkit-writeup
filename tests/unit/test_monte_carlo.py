@@ -139,3 +139,24 @@ def test_cli_mc_command() -> None:
     """Verify CLI mc subcommand executes cleanly."""
     exit_code = cli_main(["mc", "--sessions", "5", "--steps", "20", "--seed", "7"])
     assert exit_code == 0
+
+
+def test_adverse_selection_mc_degrades_mean_pnl() -> None:
+    """Causal adverse-selection jumps must lower expected market-making PnL vs uninformed flow."""
+    asset = AssetScenarioConfig(
+        symbol="MC_ASSET",
+        process=OrnsteinUhlenbeckParams(mu=10000.0, theta=0.05, sigma=1.5),
+        book=BotBookConfig(half_spread_l1=3.0, depth_l1=10),
+        arrivals=TradeArrivalConfig(arrival_prob=0.6, buy_prob=0.5, min_size=2, max_size=4),
+        position_limit=10,
+    )
+    mc_base = MonteCarloEngine(assets=[asset], fill_mode="queue_aware", adverse_selection_prob=0.0)
+    mc_adv = MonteCarloEngine(
+        assets=[asset],
+        fill_mode="queue_aware",
+        adverse_selection_prob=0.8,
+        adverse_jump_size=8.0,
+    )
+    res_base = mc_base.run(_TestQuotingProbeStrategy, n_sessions=20, n_steps=80, seed=42)
+    res_adv = mc_adv.run(_TestQuotingProbeStrategy, n_sessions=20, n_steps=80, seed=42)
+    assert res_adv.mean_pnl < res_base.mean_pnl

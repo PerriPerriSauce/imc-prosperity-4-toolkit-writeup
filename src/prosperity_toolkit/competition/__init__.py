@@ -3,6 +3,7 @@
 from prosperity_toolkit.competition.adapter import (
     CompetitionStateAdapter,
     CompetitionStrategyAdapter,
+    load_competition_trader,
 )
 from prosperity_toolkit.competition.datamodel import (
     ConversionObservation,
@@ -43,5 +44,6 @@ __all__ = [
     "Trade",
     "TradingState",
     "get_round_position_limits",
+    "load_competition_trader",
     "get_round_products",
 ]

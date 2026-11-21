@@ -24,8 +24,11 @@ def test_order_book_empty() -> None:
 
 
 def test_volume_weighted_mid(sample_order_book: OrderBookL2) -> None:
-    """Verify microprice volume weighting."""
-    # bids={99: 10}, asks={101: -10} -> equal volumes (10, 10) -> microprice = 100.0
+    """Verify microprice volume weighting on both symmetric and asymmetric books."""
     w_mid = sample_order_book.weighted_mid_price
     assert w_mid is not None
     assert round(w_mid, 2) == 100.0
+
+    # Asymmetric: bid 100 (vol 30), ask 102 (vol 10) -> (100*10 + 102*30) / 40 = 101.5
+    asym = OrderBookL2(symbol="ASYM", bids={100: 30}, asks={102: -10})
+    assert asym.weighted_mid_price == 101.5

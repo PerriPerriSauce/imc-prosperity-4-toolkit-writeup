@@ -97,3 +97,37 @@ def test_block_bootstrap_ci_contains_point_estimate() -> None:
     sample_pnl = float(np.sum(rets))
     assert ci.pnl_ci_low < sample_pnl < ci.pnl_ci_high
     assert ci.sharpe_ci_low < ci.mean_sharpe < ci.sharpe_ci_high
+
+
+def test_block_matrix_dsr_uses_n_eff_and_constant_col_handling() -> None:
+    """Block-matrix DSR uses N_eff and handles zero-variance columns safely."""
+    rng = np.random.default_rng(99)
+    base = rng.normal(0.15, 1.0, size=(1000, 1))
+    cols = np.column_stack([base, base, np.zeros((1000, 1)), rng.normal(0.0, 1.0, size=1000)])
+    n_eff = OverfittingDiagnostics.estimate_effective_trials(cols)
+    assert 1.5 <= n_eff <= 3.0
+
+    dsr_res, eff = OverfittingDiagnostics.evaluate_block_matrix_dsr(cols, 0, block_size=100)
+    assert dsr_res.n_obs == 10
+    assert dsr_res.n_trials == round(eff)
+    assert 0.0 <= dsr_res.deflated_sharpe_ratio <= 1.0
+
+
+def test_require_interior_plateau_rejects_corner_bias() -> None:
+    """require_interior=True ignores clipped 2x2 corner cells."""
+    vals = [0.0, 1.0, 2.0, 3.0, 4.0]
+    scores = np.full((5, 5), 1.0, dtype=np.float64)
+    # Tight 2x2 corner plateau -> clipped corner (0, 0) has low std and high mean,
+    # whereas interior (1, 1) sees five 1.0 neighbors (huge std -> penalized).
+    scores[0:2, 0:2] = [[9.9, 9.8], [9.8, 9.7]]
+    # Broad flat interior plateau centered at (3, 3)
+    scores[2:5, 2:5] = 6.0
+
+    corner = SensitivityAnalyzer.select_stable_plateau_2d(vals, vals, scores, std_penalty=0.5)
+    assert corner.is_boundary
+    assert (corner.x_index, corner.y_index) == (0, 0)
+    interior = SensitivityAnalyzer.select_stable_plateau_2d(
+        vals, vals, scores, std_penalty=0.5, require_interior=True
+    )
+    assert not interior.is_boundary
+    assert (interior.x_index, interior.y_index) == (3, 3)

@@ -82,3 +82,82 @@ def test_cli_replay_and_noop() -> None:
     engine = BacktestEngine()
     noop_res = engine.run(NoOpBaselineStrategy(), [])
     assert noop_res.total_pnl == 0.0
+
+
+def test_replay_causality_no_same_tick_trade_lookahead() -> None:
+    """Strategy at tick t must only observe trades from prior ticks, never tick t itself."""
+    from prosperity_toolkit.market.market_state import MarketStateSnapshot
+    from prosperity_toolkit.market.order_book import OrderBookL2
+    from prosperity_toolkit.market.order_flow import TradePrint
+
+    class _TradePeekingStrategy(BaseStrategy):
+        def __init__(self) -> None:
+            super().__init__(name="Peeker")
+            self.seen_by_ts: dict[int, list[int]] = {}
+
+        def generate_orders(self, state: MarketStateSnapshot) -> list[OrderRequest]:
+            prints = state.market_trades.get("OSMIUM", [])
+            self.seen_by_ts[state.timestamp] = [t.timestamp for t in prints]
+            # Place passive buy at 99 on tick 0 so tick-0 trade fills against it
+            if state.timestamp == 0:
+                return [OrderRequest(symbol="OSMIUM", price=99, quantity=2)]
+            return []
+
+    b0 = OrderBookL2(symbol="OSMIUM", bids={99: 5}, asks={102: -5})
+    b1 = OrderBookL2(symbol="OSMIUM", bids={99: 5}, asks={102: -5})
+    snap0 = MarketStateSnapshot(
+        timestamp=0,
+        books={"OSMIUM": b0},
+        market_trades={"OSMIUM": [TradePrint(0, "OSMIUM", 98, 2, "", "")]},
+    )
+    snap1 = MarketStateSnapshot(
+        timestamp=100,
+        books={"OSMIUM": b1},
+        market_trades={"OSMIUM": [TradePrint(100, "OSMIUM", 99, 2, "", "")]},
+    )
+    strat = _TradePeekingStrategy()
+    sim = ExecutionSimulator(position_limits={"OSMIUM": 10}, fill_mode="conservative")
+    eng = BacktestEngine(simulator=sim, initial_cash=500.0)
+    res = eng.run(strat, [snap0, snap1])
+
+    # At t=0 strategy saw NO trades; at t=100 it saw t=0 trade
+    assert strat.seen_by_ts[0] == []
+    assert strat.seen_by_ts[100] == [0]
+    # Resting buy at t=0 still matched incoming t=0 trade at 98 (qty 2 @ quote 99)
+    assert len(res.fills) == 1
+    assert res.fills[0].price == 99 and res.fills[0].quantity == 2
+    # initial_cash=500 subtracted properly: MTM at 100.5 -> 2*(100.5-99) = +3.0
+    assert res.total_pnl == 3.0
+    # Input snapshots were not mutated
+    assert snap0.positions == {} and snap1.positions == {}
+
+
+def test_end_to_end_batch_limit_rejection() -> None:
+    """BacktestEngine cancels entire product batch on worst-case limit breach."""
+    import pytest
+
+    from prosperity_toolkit.core.exceptions import PositionLimitExceededError
+    from prosperity_toolkit.market.market_state import MarketStateSnapshot
+    from prosperity_toolkit.market.order_book import OrderBookL2
+
+    class _BreachingStrategy(BaseStrategy):
+        def generate_orders(self, state: MarketStateSnapshot) -> list[OrderRequest]:
+            return [
+                OrderRequest(symbol="OSMIUM", price=102, quantity=2),
+                OrderRequest(symbol="OSMIUM", price=102, quantity=4),  # total 6 > limit 5
+            ]
+
+    book = OrderBookL2(symbol="OSMIUM", bids={99: 10}, asks={102: -10})
+    snap = MarketStateSnapshot(timestamp=0, books={"OSMIUM": book})
+
+    res = BacktestEngine(
+        simulator=ExecutionSimulator(position_limits={"OSMIUM": 5}),
+        reject_on_limit_breach=True,
+    ).run(_BreachingStrategy(), [snap])
+    assert res.fills == []
+
+    with pytest.raises(PositionLimitExceededError):
+        BacktestEngine(
+            simulator=ExecutionSimulator(position_limits={"OSMIUM": 5}),
+            reject_on_limit_breach=False,
+        ).run(_BreachingStrategy(), [snap])

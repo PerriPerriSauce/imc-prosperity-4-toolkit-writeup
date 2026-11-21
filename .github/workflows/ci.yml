@@ -35,5 +35,8 @@ jobs:
           uv run python scripts/validate_submission.py traders/round4/submission.py
           uv run python scripts/validate_submission.py traders/round5/submission.py
 
+      - name: Verify raw dataset manifest and SHA-256 checksums
+        run: uv run python scripts/audit_all_datasets.py --verify-only
+
       - name: Run unit and integration test suite
         run: uv run pytest

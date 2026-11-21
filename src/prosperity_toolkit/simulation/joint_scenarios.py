@@ -26,6 +26,18 @@ from prosperity_toolkit.simulation.synthetic_book import BotBookConfig, build_sy
 from prosperity_toolkit.strategies.base import BaseStrategy
 
 
+def wilson_ci_upper(n_failures: int, n_trials: int, z: float = 1.96) -> float:
+    """Compute upper bound of the two-sided Wilson score CI for failure rate."""
+    if n_trials <= 0:
+        return 1.0
+    p_hat = min(max(n_failures / float(n_trials), 0.0), 1.0)
+    z2 = z * z
+    denom = 1.0 + z2 / float(n_trials)
+    center = p_hat + z2 / (2.0 * float(n_trials))
+    margin = z * math.sqrt((p_hat * (1.0 - p_hat) + z2 / (4.0 * float(n_trials))) / float(n_trials))
+    return float(min(1.0, (center + margin) / denom))
+
+
 def _summarize_mc_results(
     results: list[BacktestResult],
     n_sessions: int,
@@ -67,6 +79,8 @@ def simulate_arrival_sensitivity(
     n_steps: int = 1000,
     fill_mode: FillMode = "queue_aware",
     seed: int = 42,
+    adverse_selection_prob: float = 0.0,
+    adverse_jump_size: float = 4.0,
 ) -> dict[float, MonteCarloSummary]:
     """Run Monte Carlo arrival-rate sensitivity sweeps (MAF valuation diagnostics)."""
     out: dict[float, MonteCarloSummary] = {}
@@ -88,7 +102,9 @@ def simulate_arrival_sensitivity(
         ]
         engine = MonteCarloEngine(
             assets=scaled_cfgs,
-            conservative_fills=(fill_mode == "conservative"),
+            fill_mode=fill_mode,
+            adverse_selection_prob=adverse_selection_prob,
+            adverse_jump_size=adverse_jump_size,
         )
         out[float(arrival_rate)] = engine.run(
             strategy_factory=strategy_factory,
@@ -138,6 +154,10 @@ class OptionsSpotScenarioConfig:
     )
     hydrogel_spread: float = 7.5
     option_strikes: tuple[CoupledOptionStrikeConfig, ...] = (
+        CoupledOptionStrikeConfig("VEV_4000", 4000.0, half_spread=10.5, seller_initiated_prob=0.5),
+        CoupledOptionStrikeConfig("VEV_4500", 4500.0, half_spread=8.0, seller_initiated_prob=0.5),
+        CoupledOptionStrikeConfig("VEV_5000", 5000.0, half_spread=3.0, seller_initiated_prob=0.8),
+        CoupledOptionStrikeConfig("VEV_5100", 5100.0, half_spread=2.0, seller_initiated_prob=0.85),
         CoupledOptionStrikeConfig("VEV_5200", 5200.0, half_spread=1.5, seller_initiated_prob=0.90),
         CoupledOptionStrikeConfig("VEV_5300", 5300.0, half_spread=1.0, seller_initiated_prob=0.98),
         CoupledOptionStrikeConfig("VEV_5400", 5400.0, half_spread=1.0, seller_initiated_prob=1.00),
@@ -146,7 +166,10 @@ class OptionsSpotScenarioConfig:
     tte_start_days: float = 5.0
     steps_per_day: int = 10000
     pricing_model: str = "bs"
-    pricing_scale: float = 250.0
+    pricing_scale: float = 252.0
+    adverse_selection_prob: float = 0.0
+    adverse_jump_size: float = 3.5
+    emit_counterparty_tags: bool = True
 
 
 class CoupledOptionsMonteCarloEngine:
@@ -226,15 +249,27 @@ class CoupledOptionsMonteCarloEngine:
                 trades: dict[str, list[TradePrint]] = {}
 
                 if rng.random() < self.config.spot_arrival_prob:
+                    is_buy = rng.random() < 0.5
                     side_px = (
                         books[self.config.spot_symbol].best_ask
-                        if rng.random() < 0.5
+                        if is_buy
                         else books[self.config.spot_symbol].best_bid
                     )
                     if side_px is not None:
                         qty = int(rng.integers(1, 10))
-                        buyer = "BOT" if side_px == books[self.config.spot_symbol].best_ask else ""
-                        seller = "" if buyer else "BOT"
+                        # Optionally generate causal Mark 55 directional / adverse flow tags
+                        informed = (
+                            self.config.adverse_selection_prob > 0.0
+                            and rng.random() < self.config.adverse_selection_prob
+                        )
+                        if informed and t + 1 < n_steps:
+                            jump = self.config.adverse_jump_size * (1.0 if is_buy else -1.0)
+                            spot_paths[s_idx, t + 1 :] += jump
+                            tag = "Mark 55" if self.config.emit_counterparty_tags else "BOT"
+                        else:
+                            tag = "Mark 14" if self.config.emit_counterparty_tags else "BOT"
+                        buyer = tag if is_buy else ""
+                        seller = "" if is_buy else tag
                         trades[self.config.spot_symbol] = [
                             TradePrint(
                                 timestamp=ts,
@@ -304,7 +339,7 @@ class CoupledOptionsMonteCarloEngine:
 
 @dataclass(frozen=True, slots=True)
 class Round5JointConfig:
-    """Representative multi-category Round 5 joint simulation configuration."""
+    """Representative 11-asset Round 5 joint simulation (5 Pebbles, 2 Snackpacks, 4 MM goods)."""
 
     position_limit: int = 10
     pebbles_sum_target: float = 50000.0
@@ -316,6 +351,8 @@ class Round5JointConfig:
     snackpack_pair_corr: float = -0.91
     snackpack_spread: float = 8.5
     group_v_pulse_prob: float = 0.024
+    adverse_selection_prob: float = 0.0
+    adverse_jump_size: float = 6.0
     mm_symbols: tuple[str, ...] = (
         "GALAXY_SOUNDS_DARK_MATTER",
         "UV_VISOR_RED",
@@ -327,7 +364,7 @@ class Round5JointConfig:
 
 
 class Round5JointMonteCarloEngine:
-    """Two-layer Round 5 Monte Carlo simulator (baskets + wide/tight MM + sync pulses)."""
+    """Representative 11-asset Round 5 Monte Carlo simulator (baskets, MM, and sync pulses)."""
 
     PEBBLES: tuple[str, ...] = (
         "PEBBLES_XS",
@@ -468,13 +505,24 @@ class Round5JointMonteCarloEngine:
                         px = book.best_ask if gv_pulse_buy else book.best_bid
                         if px is not None:
                             trades[sym] = [TradePrint(ts, sym, int(px), gv_pulse_qty, "", "")]
+                            if (
+                                self.config.adverse_selection_prob > 0.0
+                                and rng.random() < self.config.adverse_selection_prob
+                            ):
+                                sign = 1.0 if gv_pulse_buy else -1.0
+                                mm_fvs[m_idx] += sign * self.config.adverse_jump_size
                     elif rng.random() < 0.14:
-                        px = book.best_ask if rng.random() < 0.5 else book.best_bid
+                        is_b = bool(rng.random() < 0.5)
+                        px = book.best_ask if is_b else book.best_bid
                         if px is not None:
                             qty = int(rng.integers(1, 4))
-                            trades[sym] = [
-                                TradePrint(ts, sym, int(px), qty, "", ""),
-                            ]
+                            trades[sym] = [TradePrint(ts, sym, int(px), qty, "", "")]
+                            if (
+                                self.config.adverse_selection_prob > 0.0
+                                and rng.random() < self.config.adverse_selection_prob
+                            ):
+                                sign = 1.0 if is_b else -1.0
+                                mm_fvs[m_idx] += sign * self.config.adverse_jump_size
 
                 snapshots.append(
                     MarketStateSnapshot(timestamp=ts, books=books, market_trades=trades),
