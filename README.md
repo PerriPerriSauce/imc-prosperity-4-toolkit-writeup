@@ -4,7 +4,7 @@ Our team, `63-bit integers` came `60th Worldwide`, `8th in Australia`, and `13th
 
 This repository chronicles **Team `63-bit integers`' live participation in IMC Prosperity 4** alongside the **reproducible post-contest Python 3.11 research toolkit** built afterward to audit live hypotheses, eliminate overfitting and look-ahead pitfalls, enforce causal `t - 100` queue-aware execution, and systematically redesign our Round 5 strategy.
 
-![Diddy Blud](images\Prosperity_4_Winscreen_60th.jpg)
+![Diddy Blud](images/Prosperity_4_Winscreen_60th.jpg)
 
 Every algorithmic submission in [`traders/`](traders/round5/README.md) runs cleanly behind an AST-enforced runtime boundary (`datamodel` + Python stdlib only) and reproduces single-pass chronological out-of-sample replays via `load_competition_trader` and [`ExecutionSimulator`](src/prosperity_toolkit/execution/simulator.py).
 
