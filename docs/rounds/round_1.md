@@ -1,4 +1,6 @@
-# Round 1: Market Fundamentals, Bot Structure & Strategy Refinement
+# Round 1: Market Fundamentals, Bot Structure & Live-to-OOS Reconciliation
+
+> **Official Live Competition Result (`Team 63-bit integers`)**: Algo **`+116,927`** · Manual `+87,995` · Round Total **`+204,922` XIRECs**.
 
 ## 1. Tradable Instruments (Observed)
 

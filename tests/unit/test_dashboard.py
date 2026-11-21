@@ -53,6 +53,15 @@ def test_load_context_and_build_html_tearsheet(tmp_path: Path) -> None:
         "0.0224,3097.1,6179.5,0.1986\n",
         encoding="utf-8",
     )
+    (tables_dir / "competition_results.csv").write_text(
+        "round,phase,algo_pnl,manual_pnl,round_total_pnl,postcontest_oos_algo_pnl,notes\n"
+        "R1,Phase 1,116927,87995,204922,91098.0,Round 1 fixture\n"
+        "R2,Phase 1,115543,200716,316259,94209.0,Round 2 fixture\n"
+        "R3,Phase 2,213104,78225,291329,95093.0,Round 3 fixture\n"
+        "R4,Phase 2,220783,36969,257752,260540.0,Round 4 fixture\n"
+        "R5,Phase 2,31087,120165,151252,97628.0,Round 5 fixture\n",
+        encoding="utf-8",
+    )
     (tables_dir / "manual_challenges_summary.csv").write_text(
         "round,challenge,scenario,parameter,optimal_action,expected_metric,metric_unit,"
         "assumption_note\n"
@@ -68,6 +77,7 @@ def test_load_context_and_build_html_tearsheet(tmp_path: Path) -> None:
     (figs_dir / "manual_challenges_analysis.png").write_bytes(tiny_png)
 
     ctx = ResearchDashboard.load_portfolio_context(tables_dir=tables_dir)
+    assert len(ctx["competition_rows"]) == 5
     assert len(ctx["submissions_queue_aware"]) == 2
     assert len(ctx["overfitting_gates"]) == 2
 
@@ -79,10 +89,12 @@ def test_load_context_and_build_html_tearsheet(tmp_path: Path) -> None:
     )
     assert built.exists()
     text = built.read_text(encoding="utf-8")
+    assert "63-bit integers" in text
+    assert "+700,334" in text
+    assert "60th Worldwide" in text
     assert "+185,307.00" in text
     assert "IR_tick" in text
     assert "Sharpe (252)" not in text
     assert "Zero losing paths" not in text
     assert "data:image/png;base64," in text
     assert "Test&lt;script&gt;" in text
-    assert "Not Live Portal Scores" in text

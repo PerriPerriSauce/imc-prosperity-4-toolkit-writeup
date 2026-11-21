@@ -50,3 +50,11 @@ Documenting structural failures and refuted hypotheses keeps quantitative modeli
   1. **`Pebbles`**: Although $\sum P_i = 50{,}000 \pm 2.82$ (`ADF t = -70.16`, `0.16`-tick half-life) holds structurally, `2.82`-tick basket dispersion sits completely inside the combined `12–14` tick quoted spreads of five legs—attempting spread-crossing IOC arbitrage produces zero profitable fills while resting passive skew suffers adverse lag.
   2. **`VOL_GUARD` Halts**: Shutting down quoting completely during active pulses forfeited spread capture on re-anchoring books, whereas proportional volatility-scaled skew (`vol_skew_mult * vol_ema`) protects inventory without shutting off maker EV.
 - **Permanent Control**: Pruned `Pebbles` crossing and hard `VOL_GUARD` halts from `traders/round5/submission.py`, keeping only verified passive vol-scaled AS quoting and `MICROCHIP_CIRCLE` causal lag adjustment.
+
+---
+
+## `PM-006` — Live Round 5 Sprint Underperformance (`+31,087` Live Algo vs. `+97,628` Post-Contest Audit)
+
+- **Incident Context**: Entering Finals Round 5 in strong leaderboard contention after `+213,104` (R3) and `+220,783` (R4) live algorithmic rounds, Team `63-bit integers` recorded only **`+31,087` Algo PnL** in Round 5 (while Manual `+120,165` preserved a `+700,334` Phase 2 total and `60th Worldwide` finish).
+- **Root Cause**: Under tight turnaround pressure across `50` unfamiliar books and `±10` caps without counterparty tags, the live bot suffered from a combination of `PM-004` (EMA smoothing lag during sudden Poisson pulses) and `PM-005` (adverse skew from `Pebbles` sum divergence and rigid stop-quoting halts).
+- **Post-Contest Remediation**: Building the systematic IS/OOS harness in `prosperity_toolkit`, testing each cross-asset conjecture independently on Days `2–3` prior to held-out Day `4` evaluation, pruning `Pebbles` crossing & hard halts, and adding proportional step-vol scaling plus `MICROCHIP_CIRCLE` 50/100/150/200-tick causal lead-lag lifted OOS PnL to **`+97,628.00`** (`1.66x` higher `PnL/MaxDD` than `EmaSymmetricMM_All50`).

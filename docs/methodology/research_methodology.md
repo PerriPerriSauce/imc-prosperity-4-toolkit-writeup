@@ -22,12 +22,12 @@ A large $t$-statistic or tight structural invariant does not automatically yield
 - **Sub-Spread Constant-Sum (`Round 5 Pebbles`)**: $\sum_{i=1}^5 P_i = 50{,}000 \pm 2.82$ (`ADF t = -70.16`) is a verified statistical invariant, yet its `2.82`-tick standard deviation sits strictly inside the `12–14` tick 5-leg touch spread—meaning IOC crossing is unprofitable and was pruned.
 
 ### Strict Distinction of Knowledge Layers
-Every document and table distinguishes:
-1. **Observed Data**: Immutable raw CSVs verified against [`prosperity4_manifest.json`](../../data/manifests/prosperity4_manifest.json).
-2. **Estimated Parameters**: Statistics fitted strictly on calibration splits (`Day -2..-1` R1, `Day -1..0` R2, `Day 0..1` R3, `Day 1..2` R4, `Day 2..3` R5).
-3. **Model Assumptions**: Verified official position limits (`±80` R1–R2, `±200/300` R3–R4, `±10` R5), causal queue-aware matching approximations, and Gaussian/adverse MC parameters.
-4. **Simulated Results**: Held-out OOS historical replays and stressed Monte Carlo ensembles (`N = 40`).
-5. **Ex-Ante Offline Manual Models**: Closed-form/Bayesian models built prior to outcomes (`MANUAL_CHALLENGES.md`); never represented as live portal telemetry.
+Every document and table distinguishes five separate knowledge layers:
+1. **Official Live Competition Results**: Realized contest scores and placements by Team `63-bit integers` (`60th Worldwide`, `8th Australia`, `13th APAC`; Phase 1 `+521,181`, Phase 2 **`+700,334`**; archived in [`competition_results.csv`](../../reports/tables/competition_results.csv)).
+2. **Observed Data**: Immutable raw CSVs verified against [`prosperity4_manifest.json`](../../data/manifests/prosperity4_manifest.json).
+3. **Estimated Parameters**: Statistics fitted strictly on calibration splits (`Day -2..-1` R1, `Day -1..0` R2, `Day 0..1` R3, `Day 1..2` R4, `Day 2..3` R5).
+4. **Post-Contest Simulated Results**: Held-out OOS historical replays under strict causal `t - 100` `queue_aware` matching and stressed Monte Carlo ensembles (`N = 40`).
+5. **Ex-Ante Manual Models vs. Realized Payouts**: Closed-form/Bayesian manual formulations ([`MANUAL_CHALLENGES.md`](../manual/MANUAL_CHALLENGES.md)) paired against live realized manual totals (`+524,070` across R1–R5).
 
 ### Baseline Benchmarking & Ablation Discipline
 Every production refinement earns its complexity against simple baselines (`NoOpBaseline`, `SymmetricMM`, `SymmetricMM_80`, `OptionsVolatilityContract`, `Round3NoFlow`, `EmaSymmetricMM_All50`, `Round5NoLeadLag`) under all three fill modes (`conservative`, `queue_aware`, `touch`).

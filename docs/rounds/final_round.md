@@ -1,20 +1,22 @@
-# Final Round & Multi-Round Architecture Synthesis (Rounds 1–5)
+# Final Round & Multi-Round Synthesis — Team `63-bit integers` (Rounds 1–5)
 
-## 1. Cross-Round Structural Progression
+> **Official Live Placement (`Team 63-bit integers`, OCaml Reference)**: **`60th Worldwide`** · **`8th Australia`** · **`13th APAC`** · **Phase 2 Official PnL `+700,334` XIRECs** *(Phase 1 `+521,181`; Full R1–R5 Cumulative `+1,221,515`)*.
+
+## 1. Cross-Round Structural Progression & Live-to-Post-Contest Audit
 
 Across Rounds 1 through 5, **IMC Prosperity 4** escalated both price-process diversity and portfolio constraints on [`Trader.run`](../../src/prosperity_toolkit/competition/datamodel.py):
 
-| Round | Active Universe | Official Limits | Promoted Microstructural Signal | Pruned / Negative Finding | Submission |
-| :---: | :--- | :---: | :--- | :--- | :--- |
-| **R1** | `ASH_COATED_OSMIUM`, `INTARIAN_PEPPER_ROOT` | `±80` | Fixed `10k` OU anchor + max-wall carry on `+0.10/tick` trend | Naive L1 `SymmetricMM` variance & `37.5%` MC loss | [`traders/round1/submission.py`](../../traders/round1/submission.py) |
-| **R2** | `ASH_COATED_OSMIUM`, `INTARIAN_PEPPER_ROOT` | `±80` | `min_edge=2.5, skew=0.40` plateau; `+25%` MAF arrival lift (`+15.2%` MC) | Unskewed `SymmetricMM_80` (`-20,294.50` OOS bleed) | [`traders/round2/submission.py`](../../traders/round2/submission.py) |
-| **R3** | `HYDROGEL_PACK`, `VELVETFRUIT_EXTRACT`, `VEV_4000..5500` | `±200` / `±300` | Bayesian OU + Black-Scholes total-vol $v_K = \sigma_K \sqrt{\tau}$ | Fixed-TTE BS (`-1,051` OOS) & spot delta-hedging drag | [`traders/round3/submission.py`](../../traders/round3/submission.py) |
-| **R4** | Same `12` assets + `Mark 01..67` prints | `±200` / `±300` | Strictly causal prior-tick `Mark 14` SELL / `Mark 55` BUY flow (`+11,153.50` OOS) | `Mark 67` BUY (`+1.924` 1-tick bounce, zero causal edge) | [`traders/round4/submission.py`](../../traders/round4/submission.py) |
-| **R5** | `50` new spot securities (`10` categories) | `±10` (`max 500`) | Vol-scaled AS (`vsm=0.18, ef=0.14`) + `MICROCHIP_CIRCLE` 50–200 lag | `Pebbles` crossing (`std=2.82` < `12–14`t spread) & `VOL_GUARD` halts | [`traders/round5/submission.py`](../../traders/round5/submission.py) |
+| Round | Active Universe | Official Limits | Live Algo / Manual PnL | Post-Contest Promoted Signal vs. Pruned Hypothesis | Submission |
+| :---: | :--- | :---: | :---: | :--- | :--- |
+| **R1** | `ASH_COATED_OSMIUM`, `INTARIAN_PEPPER_ROOT` | `±80` | `+116,927` / `+87,995` | Fixed `10k` OU anchor + max-wall carry (`+0.10/tick`); pruned L1 `SymmetricMM` | [`traders/round1/submission.py`](../../traders/round1/submission.py) |
+| **R2** | `ASH_COATED_OSMIUM`, `INTARIAN_PEPPER_ROOT` | `±80` | `+115,543` / `+200,716` | `min_edge=2.5, skew=0.40` plateau + `+25%` MAF lift; pruned `SymmetricMM_80` | [`traders/round2/submission.py`](../../traders/round2/submission.py) |
+| **R3** | `HYDROGEL_PACK`, `VELVETFRUIT_EXTRACT`, `VEV_4000..5500` | `±200` / `±300` | `+213,104` / `+78,225` | Bayesian OU + BS total-vol $v_K$; pruned fixed-TTE BS & spot delta-hedging drag | [`traders/round3/submission.py`](../../traders/round3/submission.py) |
+| **R4** | Same `12` assets + `Mark 01..67` prints | `±200` / `±300` | `+220,783` / `+36,969` | Causal `t-100` `Mark 14` SELL / `Mark 55` BUY flow; pruned `Mark 67` 1-tick bounce | [`traders/round4/submission.py`](../../traders/round4/submission.py) |
+| **R5** | `50` new spot securities (`10` categories) | `±10` (`max 500`) | `+31,087` / `+120,165` | Live sprint redesigned: vol-scaled AS + `MICROCHIP_CIRCLE` lags; pruned `Pebbles` crossing & `VOL_GUARD` | [`traders/round5/submission.py`](../../traders/round5/submission.py) |
 
-## 2. Held-Out Simulated Out-of-Sample Scorecard (`queue_aware`)
+## 2. Post-Contest Simulated Out-of-Sample Scorecard (`queue_aware`)
 
-*Epistemic disclosure: Algorithmic metrics below represent single-day held-out chronological replays under strict price-time queue conservation (`queue_aware`) and causal `t - 100` trade lag—**never** live portal scores. Round 1–2 form Phase 1 (`+185,307.00`); Round 3–5 form Phase 2 (`+453,261.00`); Cumulative 5-Day OOS = `+638,568.00` XIRECs.*
+*Epistemic boundary: Table 1 above reports Team `63-bit integers`' actual live competition totals ([`competition_results.csv`](../../reports/tables/competition_results.csv)). Table 2 below evaluates our refined standalone submissions on single held-out terminal historical days (`Day 0`–`Day 4`) under causal `t - 100` `queue_aware` matching (Phase 1 `+185,307.00` + Phase 2 `+453,261.00` = `+638,568.00` XIRECs).*
 
 | Round | Held-Out OOS Day | Key Baseline (`queue_aware`) | Submission OOS PnL | `IR_tick` (`95% Boot CI`) | `BlkSR_1k` | `MaxDD` (`PnL/DD`) | `PBO` ($N_{\text{eff}}$) | `DSR_block` | Latency |
 | :---: | :---: | :--- | ---: | :--- | :---: | ---: | :---: | :---: | :---: |

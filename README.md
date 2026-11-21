@@ -1,54 +1,63 @@
-# IMC Prosperity 4 — Quantitative Trading Research & Multi-Round Portfolio
+# IMC Prosperity 4 — Team `63-bit integers` Portfolio & Research Writeup
 
-> **Core Deliverables**
-> [Research Monograph (`FINAL_WRITEUP.md`)](reports/FINAL_WRITEUP.md) ·
-> [Compiled PDF Report (`2.52 MiB`)](reports/IMC_Prosperity4_Research_Writeup.pdf) ·
-> [Interactive HTML Tearsheet (`dashboard.html`)](reports/dashboard.html) ·
-> [Manual Challenge Models (`MANUAL_CHALLENGES.md`)](docs/manual/MANUAL_CHALLENGES.md) ·
-> [Architecture Overview](docs/architecture/system_overview.md) ·
-> [CI Workflow](.github/workflows/ci.yml)
+Our team, `63-bit integers` came `60th Worldwide`, `8th in Australia`, and `13th in APAC` with an official PnL of `+700,334` XIRECs
 
-An end-to-end **Python 3.11** quantitative trading research codebase, causal price-time order-book simulator, stressed Monte Carlo risk suite, multiple-testing validation pipeline (`interior 3x3 plateaus`, `N_eff`, `DSR_block`, `CSCV PBO`, circular block bootstrap), and competition-isolated `Trader` portfolio spanning Rounds 1–5 of **IMC Prosperity 4**.
+This repository chronicles **Team `63-bit integers`' live participation in IMC Prosperity 4** alongside the **reproducible post-contest Python 3.11 research toolkit** built afterward to audit live hypotheses, eliminate overfitting and look-ahead pitfalls, enforce causal `t - 100` queue-aware execution, and systematically redesign our Round 5 strategy.
 
-Every submission file in [`traders/`](traders/round5/README.md) is isolated from research tooling behind an AST-enforced boundary (`datamodel` + Python standard library only) and evaluated single-pass via `load_competition_trader` on held-out **Out-of-Sample (`OOS`)** days after calibration strictly on **In-Sample (`IS`)** sessions.
+![Diddy Blud](images\Prosperity_4_Winscreen_60th.jpg)
+
+Every algorithmic submission in [`traders/`](traders/round5/README.md) runs cleanly behind an AST-enforced runtime boundary (`datamodel` + Python stdlib only) and reproduces single-pass chronological out-of-sample replays via `load_competition_trader` and [`ExecutionSimulator`](src/prosperity_toolkit/execution/simulator.py).
 
 ---
 
-## 1. Held-Out Simulated OOS Scorecard (`queue_aware`)
+## 1. Official Live Competition Results
 
-*Epistemic boundary: Algorithmic figures below report **single-day chronological simulated replays** on archived competition CSVs under [`FillMode.QUEUE_AWARE`](src/prosperity_toolkit/execution/simulator.py) (with `conservative` and `touch` sensitivity also verified, enforcing causal `t - 100` trade lag and verified official position limits)—**not** live exchange portal payouts. Manual challenges are modeled strictly offline under explicit priors.*
+| Round | Phase | Live Algo PnL | Live Manual PnL | Official Round Total | Post-Contest 1-Day Sim OOS (`QA`) | Contest-to-Post-Contest Audit Notes |
+| :---: | :---: | ---: | ---: | ---: | ---: | :--- |
+| **R1** | Phase 1 | **`+116,927`** | `+87,995` | **`+204,922`** | `+91,098.00` | Fixed `10k` Osmium MM + Pepper `+0.10/tick` carry; R1 Uniform Clearing manual |
+| **R2** | Phase 1 | **`+115,543`** | `+200,716` | **`+316,259`** | `+94,209.00` | Multi-day carry & MAF arrival boost reconcile `+115.5k` live vs. `+94.2k` 1-day OOS |
+| **P1** | **Phase 1** | **`+232,470`** | **`+288,711`** | **`+521,181`** | **`+185,307.00`** | Qualified smoothly into Ranked Phase 2 |
+| **R3** | Phase 2 | **`+213,104`** | `+78,225` | **`+291,329`** | `+95,093.00` | Leaderboard reset; OU spots + unhedged `VEV_4000..5500` calls & Bayesian screening manual |
+| **R4** | Phase 2 | **`+220,783`** | `+36,969` | **`+257,752`** | `+260,540.00` | Causal prior-tick counterparty flow (`Mark 14` SELL / `Mark 55` BUY) + `Aether Crystal` hedge |
+| **R5** | Phase 2 | **`+31,087`** | `+120,165` | **`+151,252`** | `+97,628.00` | Live 50-asset sprint slowed by uncalibrated guesses; redesigned post-contest to `+97.6k` (`1.66x` PnL/DD) |
+| **P2** | **Phase 2** | **`+464,974`** | **`+235,359`** | **`+700,334`**\* | **`+453,261.00`** | Ranked Finals total |
+| **All** | **R1–R5** | **`+697,444`** | **`+524,070`** | **`+1,221,515`**\* | **`+638,568.00`** | Canonical ledger archived in [`competition_results.csv`](reports/tables/competition_results.csv) |
 
-| Round | Strategy Architecture & Official Limits | OOS Day | OOS PnL (`QA`) | `IR_tick` (`95% Boot CI`) | `BlkSR_1k` | `MaxDD` (`PnL/DD`) | `PBO` ($N_{\text{eff}}$) | `DSR_block` | Latency | Card |
+
+![Team 63-bit integers Official Competition PnL vs. Post-Contest 1-Day OOS Audit](reports/figures/competition_vs_postcontest.png)
+---
+
+## 2. Post-Contest Quantitative Audit & Held-Out Simulated OOS (`queue_aware`)
+
+*Whereas Section 1 reports **actual live contest results** achieved by Team `63-bit integers`, all tables below report **post-contest single-day chronological replays** on archived historical CSVs under strict [`FillMode.QUEUE_AWARE`](src/prosperity_toolkit/execution/simulator.py), causal `t - 100` `own_trades`/`market_trades` lag, and verified official position limits.*
+
+| Round | Refined Strategy Architecture & Limits | OOS Day | Post-Contest OOS (`QA`) | `IR_tick` (`95% Boot CI`) | `BlkSR_1k` | `MaxDD` (`PnL/DD`) | `PBO` ($N_{\text{eff}}$) | `DSR_block` | Latency | Card |
 | :---: | :--- | :---: | ---: | :--- | :---: | ---: | :---: | :---: | :---: | :--- |
 | **R1** | `10k` OU Osmium MM + max-wall Pepper carry (`±80`) | `Day 0` | **`+91,098.00`** | `0.05445` `[0.0505, 0.0587]` | `9.327` | `1,405.00` (`64.84`) | `0.129` (`1.02`) | `1.0000` | `0.0204 ms` | [`round1`](traders/round1/README.md) |
 | **R2** | Refined `±80` skew/edge plateau + MAF elasticity (`±80`) | `Day 1` | **`+94,209.00`** | `0.05466` `[0.0509, 0.0584]` | `8.237` | `1,401.00` (`67.24`) | `0.300*` (`1.04`) | `1.0000` | `0.0281 ms` | [`round2`](traders/round2/README.md) |
-| **P1** | **Phase 1 Simulated OOS Algorithmic Subtotal** | `D0+D1` | **`+185,307.00`** | — | — | — | — | `1.0000` | `<= 0.028 ms` | — |
 | **R3** | Bayesian OU + BS total-vol `VEV_4000..5500`, zero hedge (`±200/300`) | `Day 2` | **`+95,093.00`** | `0.00584` `[-0.0112, 0.0213]` | `0.573` | `75,774.00` (`1.26`) | `0.000` (`1.01`) | `0.9966` | `0.3249 ms` | [`round3`](traders/round3/README.md) |
 | **R4** | R3 core + causal `t-100` `Mark 14`/`Mark 55` flow (`±200/300`) | `Day 3` | **`+260,540.00`** | `0.01680` `[0.0010, 0.0335]` | `0.646` | `71,177.00` (`3.66`) | `0.014` (`1.02`) | `0.9783` | `0.2925 ms` | [`round4`](traders/round4/README.md) |
 | **R5** | Vol-scaled AS + `MICROCHIP_CIRCLE` 50–200t lag (`±10 x 50`) | `Day 4` | **`+97,628.00`** | `0.02624` `[0.0105, 0.0412]` | `1.108` | `14,961.50` (`6.53`) | `0.543*` (`1.14`) | `1.0000` | `0.5518 ms` | [`round5`](traders/round5/README.md) |
-| **P2** | **Phase 2 Simulated OOS Algorithmic Subtotal** | `D2–D4` | **`+453,261.00`** | — | — | — | — | `>= 0.978` | `<= 0.552 ms` | — |
-| **All** | **Cumulative 5-Day Held-Out Simulated OOS Total** | **5 Days** | **`+638,568.00`** | — | — | — | — | **`>= 0.978`** | **`<= 0.552 ms`** | [`FINAL_WRITEUP.md`](reports/FINAL_WRITEUP.md) |
+| **All** | **Cumulative 5-Day Post-Contest Simulated OOS Total** | **5 Days** | **`+638,568.00`** | — | — | — | — | **`>= 0.978`** | **`<= 0.552 ms`** | [`FINAL_WRITEUP.md`](reports/FINAL_WRITEUP.md) |
 
-*\*Note on CSCV PBO in Rounds 2 & 5*: On flat, tightly correlated interior plateaus (`R2 local_std = 0.000107`, `N_eff = 1.04`; `R5 local_std = 0.000551`, `N_eff = 1.14`), near-identical interior grid points tie-swap ranks across 8-slice CSCV partitions even while `DSR_block = 1.0000` and OOS performance holds (`+94,209.00` / `+97,628.00`).
+*\*Note on CSCV PBO in Rounds 2 & 5*: On flat, tightly correlated interior plateaus (`R2 local_std = 0.000107`, `N_eff = 1.04`; `R5 local_std = 0.000551`, `N_eff = 1.14`), near-identical grid neighbors tie-swap ranks across 8-slice CSCV partitions even while `DSR_block = 1.0000` and OOS stays profitable (`+94,209.00` / `+97,628.00`).
 
 ![Normalized Out-of-Sample Equity Curves Across Rounds 2 through 5](reports/figures/r2_to_r5_oos_equity_summary.png)
 
 ---
 
-## 2. Microstructure Discoveries & Pruned False Positives (Rounds 1–5)
+## 3. Microstructure Discoveries, Pruned Hypotheses & Live Postmortems
 
-Both genuine signals **and** explicitly falsified hypotheses shaped the five production traders:
-
-1. **Bot-Wall Fair Value & Trend Carry (`R1–R2`, `±80`)**:
-   - Raw L1 midpoints fluctuate `~31%–40%` more step-to-step due to thin inside-spread quotes on `~92.4%` two-sided books (`13–22` empty ticks/day). Anchoring `ASH_COATED_OSMIUM` at `10,000` and tracking `INTARIAN_PEPPER_ROOT`'s deterministic `+0.10000/tick` trend (`R^2 = 1.0000`) avoids naive inventory blowout (`SymmetricMM_80: -20,294.50` OOS R2) and delivers **`+91,098.00`** (`R1`) and **`+94,209.00`** (`R2`). Increasing MAF arrival rate `+25%` lifts 1,000-step MC EV by `+15.18%` (`10,966.54 -> 12,631.66`).
-2. **Horizon-Free Volatility Surface & Pruning Spot Delta Hedging (`R3`, `±200/300`)**:
-   - Fixed calendar-TTE Black-Scholes loses `-1,051.00` OOS (`OptionsVolatilityContract`). Solving for rolling EWMA total implied volatility $v_K = \sigma_K \sqrt{\tau}$ across `VEV_4000..5500` while dropping worthless `0/1` strikes (`6000/6500`) and **removing destructive `VELVETFRUIT_EXTRACT` delta hedging** earns **`+95,093.00`** OOS. Because unhedged option inventory induces large equity swings (`MaxDD = 75,774.00`), the R3 100-tick OOS bootstrap interval stays honestly wide (`[-184,416.62, +355,675.89]`).
-3. **Causal Counterparty Flow vs. 1-Tick Bounce Illusion (`R4`, `±200/300`)**:
-   - *Falsified Hypothesis (`Mark 67`)*: Conditioning strictly on In-Sample `Days 1–2` `VELVETFRUIT_EXTRACT` prints ([`r4_counterparty_velvet_midmoves.csv`](reports/tables/r4_counterparty_velvet_midmoves.csv)) proves `Mark 67` BUY is a `-1.765` pre-dip + `+1.924` unobservable 1-tick bounce followed by insignificant post-execution drift (`t+1 -> t+200 = +0.113`, `OU-adj t = 1.56`).
-   - *Verified Causal Signal (`Mark 14` & `Mark 55`)*: `Mark 14` SELL (`ou_adj_h200 = +3.788, t = +4.58`) and `Mark 55` BUY (`ou_adj_h200 = +2.460, t = +4.07`) show genuine appreciation past `t+1`. Using strictly causal `t - 100` prior-tick `state.market_trades` (`flow_weight = 1.5`) lifts OOS PnL **`+11,153.50`** (`+260,540.00` vs `+249,386.50` for `Round3NoFlow`) and lowers MaxDD **`-2,581.00`**.
-4. **Vol-Scaled AS & Microchip Lead-Lag vs. Pruned Basket Hypotheses (`R5`, `50 x ±10`)**:
-   - *Pruned Hypotheses*: `Pebbles` constant-sum (`50,000 ± 2.82`, `ADF t = -70.16`) sits strictly inside `12–14`-tick touch spreads (zero profitable crossing), `Snackpacks` equilibria shift `-98.2` ticks across days with rotating triplet weights, and hard `VOL_GUARD` halts forfeit profitable re-anchoring liquidity.
-   - *Verified Strategy*: Zero-lag volatility-scaled Avellaneda-Stoikov quoting (`vol_skew_mult = 0.18, edge_frac = 0.14`) paired with discrete IS-calibrated `MICROCHIP_CIRCLE` 50/100/150/200-tick lag adjustments (`mc_beta = 0.16`) delivers **`+97,628.00`** OOS (`+2,215.50` over `Round5NoLeadLag`, **`1.66x`** higher `PnL/MaxDD` than `EmaSymmetricMM_All50` [`6.53` vs `3.94`]) at `0.5518 ms/tick`.
+1. **Bot-Wall Fair Value & Trend Carry (`R1–R2`, `±80` -> `+116,927` & `+115,543` Live Algo)**:
+   - Raw L1 midpoints fluctuate `~31%–40%` more step-to-step due to thin inside-spread quotes on `~92.4%` two-sided books (`13–22` empty ticks/day). Anchoring `ASH_COATED_OSMIUM` around `10,000` and riding `INTARIAN_PEPPER_ROOT`'s deterministic `+0.10000/tick` trend (`R^2 = 1.0000`) avoided symmetric inventory blowout (`SymmetricMM_80: -20,294.50` OOS R2) and generated **`+91,098.00`** (`R1`) and **`+94,209.00`** (`R2`) on single-day OOS replays. Calibrated MAF sweeps show `+25%` arrival flow boosts 1,000-step MC EV `+15.18%` (`10,966.54 -> 12,631.66`), reconciling live multi-day Round 2 outperformance (`+115,543`).
+2. **Horizon-Free Volatility Surface & Pruning Spot Delta Hedging (`R3`, `±200/300` -> `+213,104` Live Algo)**:
+   - Fixed calendar-TTE Black-Scholes lost `-1,051.00` OOS (`OptionsVolatilityContract`). Solving for rolling EWMA total implied volatility $v_K = \sigma_K \sqrt{\tau}$ across `VEV_4000..5500` while dropping worthless `0/1` strikes (`6000/6500`) and **removing destructive `VELVETFRUIT_EXTRACT` delta hedging** delivered **`+95,093.00`** OOS on Day 2 (with honestly wide bootstrap CI `[-184,416.62, +355,675.89]` from unhedged inventory swings).
+3. **Causal Counterparty Flow vs. 1-Tick Bounce Illusion (`R4`, `±200/300` -> `+220,783` Live Algo)**:
+   - *Falsified Hypothesis (`Mark 67`)*: Strictly In-Sample `Days 1–2` decomposition on `VELVETFRUIT_EXTRACT` ([`r4_counterparty_velvet_midmoves.csv`](reports/tables/r4_counterparty_velvet_midmoves.csv)) proved `Mark 67` BUY is a `-1.765` pre-dip + `+1.924` unobservable 1-tick bounce followed by insignificant causal drift (`t+1 -> t+200 = +0.113`, `OU-adj t = 1.56`).
+   - *Verified Causal Signal (`Mark 14` & `Mark 55`)*: `Mark 14` SELL (`ou_adj_h200 = +3.788, t = +4.58`) and `Mark 55` BUY (`ou_adj_h200 = +2.460, t = +4.07`) show genuine post-execution appreciation. Filtering strictly causal `t - 100` prior-tick `state.market_trades` (`flow_weight = 1.5`) lifts OOS PnL **`+11,153.50`** (`+260,540.00` vs `+249,386.50` for `Round3NoFlow`) and lowers MaxDD **`-2,581.00`**.
+4. **Diagnosing the Live Round 5 Sprint (`+31,087` Live -> `+97,628.00` Post-Contest OOS, `50 x ±10`)**:
+   - *What Happened Live (`+31,087`)*: Under time pressure across 50 brand-new assets with tight `±10` caps and zero counterparty IDs, chasing unverified basket spreads (`Pebbles`, `Snackpacks`) and lagging volatility spikes suppressed live Algo PnL to `+31,087`.
+   - *Post-Contest Diagnosis & Redesign (`+97,628.00`)*: Rigorous IS testing proved `Pebbles` constant-sum (`50,000 ± 2.82`, `ADF t = -70.16`) lies inside `12–14`-tick touch spreads (zero crossing profit), `Snackpacks` shift `-98.2` ticks across days with rotating triplet weights, and hard `VOL_GUARD` halts forfeit re-anchoring spread. Pruning those traps and pairing zero-lag volatility-scaled AS quoting (`vol_skew_mult = 0.18, edge_frac = 0.14`) with discrete `MICROCHIP_CIRCLE` 50/100/150/200-tick lag adjustments (`mc_beta = 0.16`) lifts OOS PnL **`+2,215.50`** over `Round5NoLeadLag`, achieves **`1.66x`** higher `PnL/MaxDD` (`6.53` vs `3.94`) than `EmaSymmetricMM_All50`, and runs in `0.5518 ms/tick`.
 
 ![Round 4 Counterparty Causal Mark-Out Decomposition](reports/figures/r4_counterparty_markouts.png)
 
@@ -56,23 +65,23 @@ Both genuine signals **and** explicitly falsified hypotheses shaped the five pro
 
 ---
 
-## 3. Ex-Ante Offline Manual Challenge Models (Rounds 1–5)
+## 4. Manual Challenges: Ex-Ante Models vs. Live Realized Payouts (`+524,070` Total)
 
-Each manual challenge model below is formulated **strictly offline** from round problem rules and explicit Bayesian/game-theoretic assumptions—separate from algorithmic replays and never representing live portal placements. See [`MANUAL_CHALLENGES.md`](docs/manual/MANUAL_CHALLENGES.md) and [`manual_challenges_summary.csv`](reports/tables/manual_challenges_summary.csv).
+All five manual challenges contributed heavily to Team `63-bit integers`' final placement (**`+524,070` XIRECs** total across R1–R5), led by `+200,716` in Round 2 (*Invest & Expand*) and `+120,165` in Round 5 (*Extra! Extra!*). See [`MANUAL_CHALLENGES.md`](docs/manual/MANUAL_CHALLENGES.md) and [`manual_challenges_summary.csv`](reports/tables/manual_challenges_summary.csv).
 
-| Round | Challenge | Mathematical Methodology & Explicit Model Assumptions | Ex-Ante Model Policy | Model Metric |
-| :---: | :--- | :--- | :--- | :--- |
-| **R1** | *An Intarian Welcome* | Uniform clearing + back-of-queue priority integrated over `N(45, 22^2)` demand shocks (`0.10` fee on Mushroom) | `DRYLAND_FLAX: Bid 30, Qty 65`<br>`EMBER_MUSHROOM: Bid 20, Qty 10` | `68.12` / `9.81` XIRECs Expected PnL |
-| **R2** | *Invest & Expand* | Exact Research/Scale FOC + Poisson Cognitive Hierarchy (`tau = 1.5`: `L1 29.5 -> L2 37.5 -> L3 42.0%`) | `Research = 15%` (`14.71%`), `Scale = 43%` (`43.29%`), `Speed = 42%` | **`225,094.01`** Net EV vs CH blend (`246,036` L3) |
-| **R3** | *Celestial Gardeners' Guild* | Two-stage reserve screening (`{670..920}`) with cubic volume cliff over $\bar{b}_2 \sim \mathcal{N}(875, 15^2)$ | `Bid 1 = 775, Bid 2 = 880` | **`76.00`** XIRECs/unit EV (`63.73` single bid) |
-| **R4** | *Aether Crystal Exotics* | Exact BS/Rubinstein (chooser/binary/vanillas) + 100k-path `4/day` GBM KO ($\sigma_{\text{ann}}=251\%$, `15d`) + MV hedge | `AC_50_CO: -50`, `AC_40_BP: -50`, `AC_45_KO: +183`, `AC_50_C15: +53`, `AC_50_P15: +74` | `AC_45_KO = 0.2113` (vs `0.175` ask, `0.1562` `24/d`); **`-70.1%`** std cut (`EV 40.96, SR 0.104`) |
-| **R5** | *Extra! Extra!* | Ignith `9`-asset quadratic-fee `(q/100)^2 * 1M` KKT + risk penalty ($\kappa = 3.0$) with bounded `-92%` Phoenix floor (`-0.92`) | `Thermalite +36.3%, Sulfur +30.3%, Ashes -17.3%, Pyroflex -11.1%, Scoria +5.1%`, others `0%` | **`855,944.53`** Risk-Adj EV (`857,400.00` KKT vs `524,444` equal `1/9`) |
+| Round | Challenge | Ex-Ante Policy & Analytical Model | Model Benchmark | Live Realized Manual | Reconciliation / Insight |
+| :---: | :--- | :--- | :---: | ---: | :--- |
+| **R1** | *An Intarian Welcome* | Uniform clearing + back-of-queue over `N(45, 22^2)` demand shocks (`Flax (30, 65)`, `Mushroom (20, 10)`) | `68.12` / `9.81` EV | **`+87,995`** | Defended clearing fill probability above static queue without overpaying |
+| **R2** | *Invest & Expand* | Research/Scale FOC + Poisson Cognitive Hierarchy (`tau=1.5`, L3 `15% / 43% / 42%`) | `225,094.01` CH EV | **`+200,716`** | Slightly faster field Speed dispersion vs. idealized L3 prior (`~89%` of EV) |
+| **R3** | *Celestial Gardeners' Guild* | Bayesian two-bid screening (`Bid 1 = 775, Bid 2 = 880`) over $\bar{b}_2 \sim \mathcal{N}(875, 15^2)$ | `76.00`/unit EV | **`+78,225`** | Matched Bayesian expected payout closely while avoiding cubic cliff |
+| **R4** | *Aether Crystal Exotics* | Exact BS/Rubinstein + 100k `4/day` GBM KO (`AC_45_KO=0.2113`) + straddle MV hedge (`CO -50, BP -50, KO +183, C15 +53, P15 +74`) | `EV 40.96, -70.1% std` | **`+36,969`** | Captured discrete `4/d` barrier mispricing under controlled Day-15 variance |
+| **R5** | *Extra! Extra!* | Ignith `9`-asset quadratic-fee KKT + variance penalty ($\kappa=3.0$, bounded `-92%` Phoenix floor; `5/9` active) | `855,944.53` net EV | **`+120,165`** | Concentrating in highest-conviction catalysts prevented quadratic fee bleed |
 
 ![Manual Challenges Analytical Comparative Statics (R1-R5)](reports/figures/manual_challenges_analysis.png)
 
 ---
 
-## 4. Simulator Fidelity & Stressed Monte Carlo Risk (`N = 40`)
+## 5. Simulator Fidelity & Stressed Monte Carlo Risk (`N = 40`)
 
 [`ExecutionSimulator`](src/prosperity_toolkit/execution/simulator.py) enforces starting-position batch limit cancellation, multi-level taker book depletion without double-counting, strict price-time maker queue conservation (`conservative`, `queue_aware`, `touch`), and causal `t - 100` `own_trades` / `prior_market_trades` lag. Synthetic stress testing (`N = 40`, `1,000` ticks) pairs calibrated `queue_aware` sessions with an explicit `AdverseStress` regime and exact 95% Wilson binomial upper bounds (`0.0876` = `8.76%` for `0/40` losses):
 
@@ -87,7 +96,7 @@ Each manual challenge model below is formulated **strictly offline** from round 
 
 ---
 
-## 5. Repository Structure & Reviewer Navigation
+## 6. Repository Structure & Reviewer Navigation
 
 - **Executive Summary & Reports**: [`reports/FINAL_WRITEUP.md`](reports/FINAL_WRITEUP.md) · [`reports/IMC_Prosperity4_Research_Writeup.pdf`](reports/IMC_Prosperity4_Research_Writeup.pdf) · [`reports/dashboard.html`](reports/dashboard.html)
 - **Round Research Cards**: [`round_1.md`](docs/rounds/round_1.md) · [`round_2.md`](docs/rounds/round_2.md) · [`round_3.md`](docs/rounds/round_3.md) · [`round_4.md`](docs/rounds/round_4.md) · [`round_5.md`](docs/rounds/round_5.md) · [`final_round.md`](docs/rounds/final_round.md)
@@ -110,7 +119,7 @@ Each manual challenge model below is formulated **strictly offline** from round 
 
 ---
 
-## 6. Reproducible Verification & Execution
+## 7. Reproducible Verification & Execution
 
 ```bash
 # Sync locked environment (Python >=3.11,<3.13)
@@ -133,11 +142,12 @@ uv run python scripts/validate_submission.py traders/round5/submission.py
 uv run python scripts/run_backtest.py --round 1 --submission traders/round1/submission.py --day 0 --fill-mode queue_aware
 uv run python -m prosperity_toolkit.cli replay --round 1 --submission traders/round1/submission.py --day 0 --fill-mode queue_aware
 
-# 4. Regenerate full research tables, figures, manual models, HTML dashboard & PDF writeup
+# 4. Regenerate full research tables, competition summary, figures, HTML dashboard & PDF writeup
 uv run python scripts/generate_report.py
 uv run python scripts/eda_rounds2_to_5.py
 uv run python scripts/evaluate_rounds2_to_5.py
 uv run python scripts/evaluate_manual_challenges.py
+uv run python scripts/generate_competition_summary.py
 uv run python scripts/build_dashboard.py
 uv run python scripts/build_pdf_writeup.py
 ```

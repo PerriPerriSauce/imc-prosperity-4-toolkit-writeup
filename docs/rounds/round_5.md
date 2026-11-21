@@ -1,4 +1,6 @@
-# Round 5 ("The Final Stretch"): 50-Asset Vol-Scaled AS & Microchip Lead-Lag
+# Round 5 ("The Final Stretch"): Live Sprint Diagnosis, Vol-Scaled AS & Microchip Lead-Lag
+
+> **Official Live Competition Result (`Team 63-bit integers`)**: Algo **`+31,087`** · Manual `+120,165` · Round Total **`+151,252` XIRECs** *(Phase 2 Official Total `+700,334`, 60th Worldwide / 8th Australia / 13th APAC; live R5 sprint redesigned post-contest to `+97,628.00` Day 4 OOS)*.
 
 ## 1. Round Architecture & Position-Limit Regime Shift
 

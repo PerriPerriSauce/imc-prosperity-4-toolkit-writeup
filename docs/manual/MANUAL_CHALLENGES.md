@@ -1,18 +1,19 @@
-# Manual Challenges: Game Theory, Derivatives & Ex-Ante Models (Rounds 1–5)
+# Manual Challenges: Game Theory, Derivatives & Realized Results (Rounds 1–5)
 
-Unlike the algorithmic exchange rounds—where historical order-book ticks let us replay strategies deterministically against resting bot depth—each manual challenge in IMC Prosperity 4 involves a one-shot allocation submitted without local replay data. Because opponent choices and stochastic payoffs are unobserved locally, every model below is evaluated **strictly as an ex-ante offline mathematical policy** parameterized by explicit assumptions—never as actual live portal telemetry.
+Unlike the algorithmic exchange rounds—where historical order-book ticks let us replay strategies post-contest against resting bot depth—each manual challenge in IMC Prosperity 4 required a single irreversible decision submitted directly in the round portal. Team **`63-bit integers`** earned **`+524,070` XIRECs** across all five live manual challenges (`R1 +87,995`, `R2 +200,716`, `R3 +78,225`, `R4 +36,969`, `R5 +120,165`). Below we document our ex-ante mathematical models alongside realized live competition payouts.
 
 ![Round 1-5 Manual Challenges Comparative Statics](../../reports/figures/manual_challenges_analysis.png)
 
-## Summary of Ex-Ante Offline Model Policies (`manual_challenges_summary.csv`)
+## Summary of Ex-Ante Models vs. Realized Live Payouts (`manual_challenges_summary.csv`)
 
-| Round | Challenge Name | Ex-Ante Model Policy | Model Metric / Analytical Basis |
-| :---: | :--- | :--- | :--- |
-| **R1** | *An Intarian Welcome* | **`DRYLAND_FLAX`: `Bid 30, Qty 65`**; **`EMBER_MUSHROOM`: `Bid 20, Qty 10`** | Guards `96%` fill prob (`68.12` Expected PnL) under $\mathcal{N}(45, 22^2)$ human shocks on Flax; caps Mushroom (`9.81` EV) against `0.10`/unit fee |
-| **R2** | *Invest & Expand* | **`Research = 15%` (`14.71%`), `Scale = 43%` (`43.29%`), `Speed = 42%`** | Level-3 Cognitive Hierarchy focal equilibrium (`246,036.10` L3 EV; `225,094.01` under full CH blend) |
-| **R3** | *Celestial Gardeners' Guild* | **`Bid 1 = 775, Bid 2 = 880`** | Bayesian optimization across $\bar{b}_2 \sim \mathcal{N}(875, 15^2)$ (`76.00` EV/unit vs `63.73` single bid; shields cubic penalty cliff) |
-| **R4** | *Aether Crystal Exotics* | **`AC_50_CO: -50`, `AC_40_BP: -50`, `AC_45_KO: +183`, `AC_50_C15: +53`, `AC_50_P15: +74`** | Exploits discrete `4/day` KO survival (`0.2113` fair vs `0.175` ask; `0.1562` at `24/day`) + Day-15 MV hedge (`EV = 40.96`, `std = 393.7`, `-70.1%` std cut, `Sharpe = 0.104`) |
-| **R5** | *Extra! Extra! (Ignith)* | **KKT**: `39.0 / 30.5 / -17.5 / -10.5 / +2.5%`<br>**Risk-Adj (`kappa=3`)**: `36.3 / 30.3 / -17.3 / -11.1 / +5.1%` *(0% others)* | Exact KKT (`857,400.00` EV) and variance-adjusted (`855,944.53` EV vs `524,444` equal `1/9`) under bounded `-0.92` Phoenix floor (`-92%`) |
+| Round | Challenge Name | Ex-Ante Model Policy | Model Benchmark | **Live Realized Manual** |
+| :---: | :--- | :--- | :--- | ---: |
+| **R1** | *An Intarian Welcome* | **`DRYLAND_FLAX`: `Bid 30, Qty 65`**; **`EMBER_MUSHROOM`: `Bid 20, Qty 10`** | `68.12` Expected PnL (Flax `96%` fill); `9.81` EV (Mushroom) | **`+87,995`** |
+| **R2** | *Invest & Expand* | **`Research = 15%` (`14.71%`), `Scale = 43%` (`43.29%`), `Speed = 42%`** | `246,036.10` L3 EV (`225,094.01` vs. full CH blend) | **`+200,716`** |
+| **R3** | *Celestial Gardeners' Guild* | **`Bid 1 = 775, Bid 2 = 880`** | `76.00` EV/unit (`63.73` single bid; guards cubic cliff) | **`+78,225`** |
+| **R4** | *Aether Crystal Exotics* | **`AC_50_CO: -50`, `AC_40_BP: -50`, `AC_45_KO: +183`, `AC_50_C15: +53`, `AC_50_P15: +74`** | `AC_45_KO = 0.2113` vs. `0.175` ask; `-70.1%` std cut (`EV 40.96, SR 0.104`) | **`+36,969`** |
+| **R5** | *Extra! Extra! (Ignith)* | **KKT**: `39.0 / 30.5 / -17.5 / -10.5 / +2.5%`<br>**Risk-Adj (`kappa=3`)**: `36.3 / 30.3 / -17.3 / -11.1 / +5.1%` *(0% others)* | `857,400.00` KKT / `855,944.53` risk-adj EV vs. `524,444` `1/9` | **`+120,165`** |
+| **Total** | **R1–R5 Manual Subtotal** | **Analytical Optimization + Bounded Risk Controls** | — | **`+524,070`** |
 
 ## 1. Round 1 — *An Intarian Welcome* (Walrasian Auction & Queue Depletion)
 

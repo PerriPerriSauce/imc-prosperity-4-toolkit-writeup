@@ -1,6 +1,6 @@
 # Scope, Modeling Assumptions & Known Limitations
 
-Every finding in this repository strictly separates **observed historical order-book data** (`data/raw/`), **estimated in-sample parameters**, **model assumptions**, **simulated replay / Monte Carlo results**, and **ex-ante offline manual models**. No metric in this workspace represents an actual live IMC Prosperity 4 portal score.
+Every finding in this repository strictly separates **official live competition results** (Team `63-bit integers`: `60th Worldwide`, `8th Australia`, `13th APAC`, Phase 2 `+700,334` XIRECs), **observed historical order-book data** (`data/raw/`), **estimated in-sample parameters**, **post-contest simulated replay / Monte Carlo results**, and **ex-ante manual challenge models**.
 
 ---
 
@@ -8,10 +8,10 @@ Every finding in this repository strictly separates **observed historical order-
 
 | Aspect | Current Status / Coverage | Implication & Mitigation |
 | :--- | :--- | :--- |
-| **Algorithmic Datasets** | Complete public CSV archives for Round 0 (`Day -2..-1`), Round 1 (`Day -2..0`), Round 2 (`Day -1..1`), Round 3 (`Day 0..2`), Round 4 (`Day 1..3`), and Round 5 (`Day 2..4`), hashed in [`prosperity4_manifest.json`](../data/manifests/prosperity4_manifest.json). | One chronological terminal day per round (`Day 0` R1, `Day 1` R2, `Day 2` R3, `Day 3` R4, `Day 4` R5) is reserved strictly for single-pass out-of-sample evaluation. Furthermore, Round 3 and Round 4 share **byte-identical `prices` CSVs on `Day 1` and `Day 2`**. Three daily trajectories per round remain narrow for regime exhaustion—for instance, `R3` Day 2 OOS bootstrap CI spans `[-184,416.62, +355,675.89]` even with `+95,093.00` point PnL—so block bootstrap CIs and stressed MC suites always accompany point PnL. |
-| **Official Position Limits** | Verified across public CSVs and `prosperity4bt` constants: `±80` (R0–R2), `±200` spot / `±300` options (R3–R4), and `±10` across all 50 assets (R5). | Every production strategy ([`traders/round1`](../traders/round1/submission.py)–[`traders/round5`](../traders/round5/submission.py)) and [`ExecutionSimulator`](../src/prosperity_toolkit/execution/simulator.py) enforce the exact same verified limits. |
+| **Algorithmic Datasets** | Complete public CSV archives for Round 0 (`Day -2..-1`), Round 1 (`Day -2..0`), Round 2 (`Day -1..1`), Round 3 (`Day 0..2`), Round 4 (`Day 1..3`), and Round 5 (`Day 2..4`), hashed in [`prosperity4_manifest.json`](../data/manifests/prosperity4_manifest.json). | One chronological terminal day per round (`Day 0` R1, `Day 1` R2, `Day 2` R3, `Day 3` R4, `Day 4` R5) is reserved strictly for single-pass post-contest out-of-sample auditing. Furthermore, Round 3 and Round 4 share **byte-identical `prices` CSVs on `Day 1` and `Day 2`**. Three daily trajectories per round remain narrow for regime exhaustion—for instance, `R3` Day 2 OOS bootstrap CI spans `[-184,416.62, +355,675.89]` even with `+95,093.00` point PnL—so block bootstrap CIs and stressed MC suites always accompany point PnL. |
+| **Official Position Limits** | Verified across public CSVs and `prosperity4bt` constants: `±80` (R0–R2), `±200` spot / `±300` options (R3–R4), and `±10` across all 50 assets (R5). | Every refined submission ([`traders/round1`](../traders/round1/submission.py)–[`traders/round5`](../traders/round5/submission.py)) and [`ExecutionSimulator`](../src/prosperity_toolkit/execution/simulator.py) enforce the exact same verified limits. |
 | **Per-Tick Lambda / Runtime Limits** | Exact AWS Lambda server timeout and RAM cutoff bounds are not publicly disclosed inside the historical CSVs ([`COMPETITION_SPECIFICATION.md`](competition/COMPETITION_SPECIFICATION.md)). | Measured per-tick mean runtime ranges from `0.0204 ms` (R1) to `0.5518 ms` (50-asset R5), leaving comfortable sub-1ms execution headroom. |
-| **Live Competition Execution** | No live submission scorecard or exchange leaderboard fills are stored locally. | All algorithmic PnL, IR, drawdowns, and MC summaries are explicitly tagged as **simulated historical replay** or **synthetic Monte Carlo** outcomes. |
+| **Live vs. Replay Granularity** | Official tournament round totals for Team `63-bit integers` (`+1,221,515` cumulative across R1–R5) are archived in [`competition_results.csv`](../reports/tables/competition_results.csv); tick-by-tick live portal logs are not exported by the platform. | All backtest PnL, IR, drawdowns, and MC tables are explicitly labeled as **post-contest simulated historical replays** or **synthetic Monte Carlo** diagnostics alongside live totals. |
 
 ---
 
@@ -42,5 +42,5 @@ Every finding in this repository strictly separates **observed historical order-
 
 ## 4. Manual Challenge Uncertainty (`docs/manual/`)
 
-Unlike exchange CSVs, opponent manual submissions are unobserved:
-- Structural payoff rules (`251%` `Aether Crystal` vol, `AC_40_BP` binary payout `10`, `9` Ignith catalysts, Round 3 cubic cliff) follow the problem specifications ([`MANUAL_CHALLENGES.md`](manual/MANUAL_CHALLENGES.md)), while uncertain crowd parameters (competing auction demand in R1, Speed CDFs in R2, cohort mean $\bar{b}_2$ in R3, Ignith edge beliefs/vols in R5, with `Ashes of the Phoenix` floored at `-0.92 > -1.00`) represent **explicit ex-ante model assumptions** rather than live portal telemetry.
+Unlike exchange CSVs, exact opponent manual choices during each round are unobserved:
+- Structural payoff rules (`251%` `Aether Crystal` vol, `AC_40_BP` binary payout `10`, `9` Ignith catalysts, Round 3 cubic cliff) follow the problem specifications ([`MANUAL_CHALLENGES.md`](manual/MANUAL_CHALLENGES.md)), while uncertain crowd parameters (competing auction demand in R1, Speed CDFs in R2, cohort mean $\bar{b}_2$ in R3, Ignith edge beliefs/vols in R5, with `Ashes of the Phoenix` floored at `-0.92 > -1.00`) represent **explicit ex-ante priors** evaluated against Team `63-bit integers`' realized live manual payouts (`+524,070` XIRECs across R1–R5).

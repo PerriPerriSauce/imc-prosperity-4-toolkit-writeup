@@ -1,5 +1,7 @@
 # Round 4: Counterparty Flow Decomposition & Stratified Mark-Outs
 
+> **Official Live Competition Result (`Team 63-bit integers`)**: Algo **`+220,783`** · Manual `+36,969` · Round Total **`+257,752` XIRECs** *(post-contest Day 3 OOS `+260,540.00`)*.
+
 ## 1. Round Context & Telemetry Evolution
 
 Round 4 carried over the exact **12-product universe** from Round 3 (`HYDROGEL_PACK` `±200`, `VELVETFRUIT_EXTRACT` `±200`, `VEV_4000..6500` `±300` each) across `Day 1`, `Day 2`, and `Day 3`, while exposing **counterparty identifiers (`buyer` and `seller`) in `trades_round_4_day_{1,2,3}.csv`**:

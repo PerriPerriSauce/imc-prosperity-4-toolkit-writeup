@@ -1,4 +1,6 @@
-# Round 2: Regime Continuity, MAF Auction Economics & Scale Quoting
+# Round 2: Regime Continuity, MAF Auction Economics & Live Outperformance
+
+> **Official Live Competition Result (`Team 63-bit integers`)**: Algo **`+115,543`** · Manual `+200,716` · Round Total **`+316,259` XIRECs** (`Phase 1 Qualification Total: +521,181`).
 
 ## 1. Round Context & Market Structure
 
@@ -62,4 +64,4 @@ Simulating `40` calibrated `1,000`-tick sessions across counterparty arrival int
 | `lambda = 0.12` (High Flow) | `13,140.95` | `3,036.35` | `8,734.33` | `8,266.75` | `0.0%` | `8.76%` | `0.0938` |
 | **`AdverseStress` (`Baseline Flow` + Jump)** | `5,572.65` | `3,417.73` | `-789.07` | `-2,163.50` | `10.0%` | `23.05%` | `0.0299` |
 
-Increasing arrival rate by `+25%` (`0.08 -> 0.10`) boosts 1,000-step MC EV by **`+15.18%`** (`+1,665.12` / `1k` steps) while simultaneously reducing standard deviation (`3,082.91 -> 2,982.79`). Extrapolating to a full `10,000`-tick session indicates MAF auction bids only stay EV-positive below roughly `~10,000–15,000` XIRECs. *(Synthetic MC outcomes are model estimates, not live portal outcomes.)*
+Increasing arrival rate by `+25%` (`0.08 -> 0.10`) boosts 1,000-step MC EV by **`+15.18%`** (`+1,665.12` / `1k` steps) while simultaneously reducing standard deviation (`3,082.91 -> 2,982.79`). This `+15%` flow elasticity reconciles why Team `63-bit integers`' live Round 2 algorithmic payout (**`+115,543`**) exceeded unboosted 1-day OOS replay (**`+94,209.00`**), indicating sealed MAF bids remained EV-positive below roughly `~10,000-15,000` XIRECs. *(Synthetic MC outputs are parameterized model stress runs supplementing live tournament results.)*

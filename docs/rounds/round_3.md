@@ -1,5 +1,7 @@
 # Round 3: Velvetfruit Options Surface, Horizon-Free Pricing & Spot Hedging Drag
 
+> **Official Live Competition Result (`Team 63-bit integers`)**: Algo **`+213,104`** · Manual `+78,225` · Round Total **`+291,329` XIRECs** *(Phase 2 leaderboard reset; single-day post-contest OOS `+95,093.00`)*.
+
 ## 1. Round Structure & Product Reset
 
 Round 3 initiated Phase 2 of IMC Prosperity 4 with a clean leaderboard reset and `12` new instruments (`120,000` order-book rows/day across `Day 0, 1, 2`):
